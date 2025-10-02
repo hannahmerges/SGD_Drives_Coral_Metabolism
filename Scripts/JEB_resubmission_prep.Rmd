@@ -1,0 +1,1246 @@
+---
+title: "JEB_resubmission_prep"
+author: "Hannah Merges"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Load libraries 
+```{r, message=FALSE}
+library(here)
+library(lme4)
+library(lmerTest)
+library(MuMIn)
+library(performance)
+library(tidyverse)
+```
+
+## Comments from the Reviewers and thoughts for re-analyzing: 
+-  Suggest using total N or P. We don't have total N or P, but we do have total DIN (adding NN and NH4). What does the analysis and plot look with that? Put nutrient data on the X. We did this just for NN, but I don't think we did DIN... But were NH4 values off?? 
+-  It looks like the reviewer really wants to understand the different drivers (similar to Jamie and Danielle's papers). We were trying to keep it simple, buttt run exact same model that you used for silicate and run each parameter (phosphate, nitrate, TA, pH, and salinity) and then compare AICs
+
+## Findings from new analyses: 
+-  Based on AIC table, it looks like 
+
+## Read in Data 
+```{r, message=FALSE}
+respo_df <- read_csv(here::here("Data", "RespoR_Normalized_Full_withNEC_andallnutrients.csv"))
+## full datasheet with GP, R, and C rates along with all env data
+## TA data is ONLY in rows for calcification 
+respo_df %>% 
+  write_csv(here::here("Data", "respo_df.csv"))
+
+#########
+## need to get TA values into respiration and gross photosynthesis rows as well 
+#########
+## Important notes: Varari_Col5_Dil1_Light is missing/deleted
+## manually entered TA values into R and GP from C, saved as respo_df_edited. Use this one for model selection
+
+respo_df_edited <- read_csv(here::here("Data", "respo_df_edited.csv"))
+
+respo_df_edited <- respo_df_edited %>% 
+  mutate(ammonia_umolL = as.numeric(ammonia_umolL), 
+         new_colonynumber = as.character(new_colonynumber), 
+         ammonia_umolL = if_else(is.na(ammonia_umolL), 0.02, ammonia_umolL)) ## make any ammonia values that were convered to NA from <0.02 to just 0.02) 
+
+```
+
+# SECTION 1: AIC MODEL SELECTION 
+-  Run each parameter (n=7) for each physio rate (n=3) with and without site in the model and as linear and polynomial for a total of 28 AIC values per physio rate to compare. 
+
+### Edit df for AIC model selection so that accounts for standardized vars, AICs are basing off of effect size 
+```{r}
+# AICs are based off of the effect size - change that here 
+standardized_df <- respo_df_edited %>% 
+  dplyr::select(P_R, date, site, new_colonynumber, umol.cm2.hr, phosphate_umolL:NN_umolL, salinity, TA_initial, new_pH) %>% 
+  mutate_at(vars(phosphate_umolL:new_pH), .funs = "log") %>% 
+  mutate_at(vars(phosphate_umolL:new_pH), .funs = "scale") %>% 
+  mutate_at(vars(phosphate_umolL:new_pH), .funs = "as.numeric")
+```
+
+
+### Respiration: 
+-  NN is coming out on top for linear, re run all the models 
+-  Make sure to run plots on the RAW NN data, not the standardized values 
+
+```{r}
+##################
+# linear with site
+##################
+
+## silicate 
+silicate_linear_site_R <- lmer(umol.cm2.hr ~ silicate_umolL*site + (1|date/new_colonynumber), data=standardized_df %>%
+                      filter(P_R=="R") %>%
+                      filter(!is.infinite(umol.cm2.hr)))
+
+anova(silicate_linear_site_R)
+summary(silicate_linear_site_R)
+AIC(silicate_linear_site_R)
+AICc(silicate_linear_site_R)
+
+
+## nitrate
+nitrate_linear_site_R <- lmer(umol.cm2.hr ~ NN_umolL*site + (1|date/new_colonynumber), data=standardized_df %>%
+                      filter(P_R=="R") %>%
+                      filter(!is.infinite(umol.cm2.hr)))
+
+AIC(nitrate_linear_site_R)
+AICc(nitrate_linear_site_R)
+anova(nitrate_linear_site_R)
+summary(nitrate_linear_site_R)
+
+
+## phosphate 
+
+phosphate_linear_site_R <- lmer(umol.cm2.hr ~ phosphate_umolL*site + (1|date/new_colonynumber), data=standardized_df %>%
+                      filter(P_R=="R") %>%
+                      filter(!is.infinite(umol.cm2.hr)))
+
+AIC(phosphate_linear_site_R)
+AICc(phosphate_linear_site_R)
+anova(phosphate_linear_site_R)
+summary(phosphate_linear_site_R)
+
+## salinity
+salinity_linear_site_R <- lmer(umol.cm2.hr ~ salinity*site + (1|date/new_colonynumber), data=standardized_df %>%
+                      filter(P_R=="R") %>%
+                      filter(!is.infinite(umol.cm2.hr)))
+
+AIC(salinity_linear_site_R)
+AICc(salinity_linear_site_R)
+anova(salinity_linear_site_R)
+summary(salinity_linear_site_R)
+
+
+## pH 
+pH_linear_site_R <- lmer(umol.cm2.hr ~ new_pH*site + (1|date/new_colonynumber), data=standardized_df %>%
+                      filter(P_R=="R") %>%
+                      filter(!is.infinite(umol.cm2.hr)))
+
+AIC(pH_linear_site_R)
+AICc(pH_linear_site_R)
+anova(pH_linear_site_R)
+summary(pH_linear_site_R)
+
+## TA 
+TA_linear_site_R <- lmer(umol.cm2.hr ~ TA_initial*site + (1|date/new_colonynumber), data=standardized_df %>%
+                      filter(P_R=="R") %>%
+                      filter(!is.infinite(umol.cm2.hr)))
+AIC(TA_linear_site_R)
+AICc(TA_linear_site_R)
+anova(TA_linear_site_R)
+summary(TA_linear_site_R)
+
+
+##################
+# polynomial with site
+##################
+
+## silicate 
+silicate_poly_site_R <- lmer(umol.cm2.hr ~ silicate_umolL*site + I(silicate_umolL^2) + (1|date/new_colonynumber), data=standardized_df %>%
+                      filter(P_R=="R") %>%
+                      filter(!is.infinite(umol.cm2.hr)))
+
+AIC(silicate_poly_site_R)
+AICc(silicate_poly_site_R)
+anova(silicate_poly_site_R)
+summary(silicate_poly_site_R)
+
+## nitrate
+
+nitrate_poly_site_R <- lmer(umol.cm2.hr ~ NN_umolL*site + I(NN_umolL^2) + (1|date/new_colonynumber), data=standardized_df %>%
+                      filter(P_R=="R") %>%
+                      filter(!is.infinite(umol.cm2.hr)))
+
+AIC(nitrate_poly_site_R)
+AICc(nitrate_poly_site_R)
+anova(nitrate_poly_site_R)
+summary(nitrate_poly_site_R)
+
+## phosphate 
+
+phosphate_poly_site_R <- lmer(umol.cm2.hr ~ phosphate_umolL*site + I(phosphate_umolL^2) + (1|date/new_colonynumber), data=standardized_df %>%
+                      filter(P_R=="R") %>%
+                      filter(!is.infinite(umol.cm2.hr)))
+
+AIC(phosphate_poly_site_R)
+AICc(phosphate_poly_site_R)
+anova(phosphate_poly_site_R)
+summary(phosphate_poly_site_R)
+
+
+## salinity
+salinity_poly_site_R <- lmer(umol.cm2.hr ~ salinity*site + I(salinity^2) + (1|date/new_colonynumber), data=standardized_df %>%
+                      filter(P_R=="R") %>%
+                      filter(!is.infinite(umol.cm2.hr))) 
+
+AIC(salinity_poly_site_R)
+AICc(salinity_poly_site_R)
+anova(salinity_poly_site_R)
+summary(salinity_poly_site_R)
+
+## pH 
+pH_poly_site_R <- lmer(umol.cm2.hr ~ new_pH*site + I(new_pH^2) + (1|date/new_colonynumber), data=standardized_df %>%
+                      filter(P_R=="R") %>%
+                      filter(!is.infinite(umol.cm2.hr))) 
+
+AIC(pH_poly_site_R)
+AICc(pH_poly_site_R)
+anova(pH_poly_site_R)
+summary(pH_poly_site_R)
+
+## TA 
+TA_poly_site_R <- lmer(umol.cm2.hr ~ TA_initial*site + I(TA_initial^2) + (1|date/new_colonynumber), data=standardized_df %>%
+                      filter(P_R=="R") %>%
+                      filter(!is.infinite(umol.cm2.hr))) 
+
+AIC(TA_poly_site_R)
+AICc(TA_poly_site_R)
+anova(TA_poly_site_R)
+summary(TA_poly_site_R)
+
+##################
+# linear without site
+##################
+
+silicate_linear_NOsite_R <- lmer(umol.cm2.hr ~ silicate_umolL + (1|date/new_colonynumber), data=standardized_df %>%
+                      filter(P_R=="R") %>%
+                      filter(!is.infinite(umol.cm2.hr)))
+
+AIC(silicate_linear_NOsite_R)
+AICc(silicate_linear_NOsite_R)
+anova(silicate_linear_NOsite_R)
+summary(silicate_linear_NOsite_R)
+
+
+## nitrate
+nitrate_linear_NOsite_R <- lmer(umol.cm2.hr ~ NN_umolL + (1|date/new_colonynumber), data=standardized_df %>%
+                      filter(P_R=="R") %>%
+                      filter(!is.infinite(umol.cm2.hr)))
+
+AIC(nitrate_linear_NOsite_R)
+AICc(nitrate_linear_NOsite_R)
+anova(nitrate_linear_NOsite_R)
+summary(nitrate_linear_NOsite_R)
+
+
+## phosphate 
+
+phosphate_linear_NOsite_R <- lmer(umol.cm2.hr ~ phosphate_umolL + (1|date/new_colonynumber), data=standardized_df %>%
+                      filter(P_R=="R") %>%
+                      filter(!is.infinite(umol.cm2.hr)))
+
+AIC(phosphate_linear_NOsite_R)
+AICc(phosphate_linear_NOsite_R)
+anova(phosphate_linear_NOsite_R)
+summary(phosphate_linear_NOsite_R)
+
+
+## salinity
+salinity_linear_NOsite_R <- lmer(umol.cm2.hr ~ salinity + (1|date/new_colonynumber), data=standardized_df %>%
+                      filter(P_R=="R") %>%
+                      filter(!is.infinite(umol.cm2.hr)))
+
+AIC(salinity_linear_NOsite_R)
+AICc(salinity_linear_NOsite_R)
+anova(salinity_linear_NOsite_R)
+summary(salinity_linear_NOsite_R)
+
+## pH 
+pH_linear_NOsite_R <- lmer(umol.cm2.hr ~ new_pH + (1|date/new_colonynumber), data=standardized_df %>%
+                      filter(P_R=="R") %>%
+                      filter(!is.infinite(umol.cm2.hr)))
+
+AIC(pH_linear_NOsite_R)
+AICc(pH_linear_NOsite_R)
+anova(pH_linear_NOsite_R)
+summary(pH_linear_NOsite_R)
+
+## TA 
+TA_linear_NOsite_R <- lmer(umol.cm2.hr ~ TA_initial + (1|date/new_colonynumber), data=standardized_df %>%
+                      filter(P_R=="R") %>%
+                      filter(!is.infinite(umol.cm2.hr)))
+
+AIC(TA_linear_NOsite_R)
+AICc(TA_linear_NOsite_R)
+anova(TA_linear_NOsite_R)
+summary(TA_linear_NOsite_R)
+
+
+##################
+# polynomial without site
+##################
+
+## silicate 
+silicate_poly_NOsite_R <- lmer(umol.cm2.hr ~ silicate_umolL + I(silicate_umolL^2) + (1|date/new_colonynumber), data=standardized_df %>%
+                      filter(P_R=="R") %>%
+                      filter(!is.infinite(umol.cm2.hr))) 
+
+AIC(silicate_poly_NOsite_R)
+AICc(silicate_poly_NOsite_R)
+anova(silicate_poly_NOsite_R)
+summary(silicate_poly_NOsite_R)
+
+## nitrate
+
+nitrate_poly_NOsite_R <- lmer(umol.cm2.hr ~ NN_umolL + I(NN_umolL^2) + (1|date/new_colonynumber), data=standardized_df %>%
+                      filter(P_R=="R") %>%
+                      filter(!is.infinite(umol.cm2.hr)))
+
+AIC(nitrate_poly_NOsite_R)
+AICc(nitrate_poly_NOsite_R)
+anova(nitrate_poly_NOsite_R)
+summary(nitrate_poly_NOsite_R)
+
+## phosphate 
+
+phosphate_poly_NOsite_R <- lmer(umol.cm2.hr ~ (phosphate_umolL + I(phosphate_umolL^2)) + (1|date/new_colonynumber), data=standardized_df %>%
+                      filter(P_R=="R") %>%
+                      filter(!is.infinite(umol.cm2.hr)))
+
+AIC(phosphate_poly_NOsite_R)
+AICc(phosphate_poly_NOsite_R)
+anova(phosphate_poly_NOsite_R)
+summary(phosphate_poly_NOsite_R)
+
+## salinity
+salinity_poly_NOsite_R <- lmer(umol.cm2.hr ~ salinity + I(salinity^2) + (1|date/new_colonynumber), data=standardized_df %>%
+                      filter(P_R=="R") %>%
+                      filter(!is.infinite(umol.cm2.hr))) 
+
+AIC(salinity_poly_NOsite_R)
+AICc(salinity_poly_NOsite_R)
+anova(salinity_poly_NOsite_R)
+summary(salinity_poly_NOsite_R)
+
+
+## pH 
+pH_poly_NOsite_R <- lmer(umol.cm2.hr ~ new_pH + I(new_pH^2) + (1|date/new_colonynumber), data=standardized_df %>%
+                      filter(P_R=="R") %>%
+                      filter(!is.infinite(umol.cm2.hr))) 
+
+AIC(pH_poly_NOsite_R)
+AICc(pH_poly_NOsite_R)
+anova(pH_poly_NOsite_R)
+summary(pH_poly_NOsite_R)
+
+## TA 
+TA_poly_NOsite_R <- lmer(umol.cm2.hr ~ TA_initial + I(TA_initial^2) + (1|date/new_colonynumber), data=standardized_df %>%
+                      filter(P_R=="R") %>%
+                      filter(!is.infinite(umol.cm2.hr))) 
+
+AIC(TA_poly_NOsite_R)
+AICc(TA_poly_NOsite_R)
+anova(TA_poly_NOsite_R)
+summary(TA_poly_NOsite_R)
+
+
+################################################
+### COMPARE ALL RESPIRATION MODELS ###
+################################################
+anova(silicate_poly_NOsite_R, phosphate_poly_NOsite_R, nitrate_poly_NOsite_R, salinity_poly_NOsite_R, pH_poly_NOsite_R, TA_poly_NOsite_R, silicate_poly_site_R, phosphate_poly_site_R, nitrate_poly_site_R, salinity_poly_site_R, pH_poly_site_R, TA_poly_site_R, silicate_linear_NOsite_R, phosphate_linear_NOsite_R, nitrate_linear_NOsite_R, salinity_linear_NOsite_R, pH_linear_NOsite_R, TA_linear_NOsite_R, silicate_linear_site_R, phosphate_linear_site_R, nitrate_linear_site_R, salinity_linear_site_R, pH_linear_site_R, TA_linear_site_R)
+
+## since NN is the lowest AIC, look at the relationship it has with R 
+anova(nitrate_poly_NOsite_R)
+summary(nitrate_poly_NOsite_R) ## neg effect of NN on R, look at the ESTIMATE column to determine relationship 
+```
+
+
+### Gross Photosynthesis: 
+
+```{r}
+##################
+# linear with site
+##################
+
+## silicate 
+silicate_linear_site_GP <- lmer(umol.cm2.hr ~ silicate_umolL*site + (1|date/new_colonynumber), data=standardized_df %>%
+                      filter(P_R=="GP") %>%
+                      filter(!is.infinite(umol.cm2.hr)))
+
+AIC(silicate_linear_site_GP)
+AICc(silicate_linear_site_GP)
+anova(silicate_linear_site_GP)
+summary(silicate_linear_site_GP)
+
+
+## nitrate
+nitrate_linear_site_GP <- lmer(umol.cm2.hr ~ NN_umolL*site + (1|date/new_colonynumber), data=standardized_df %>%
+                      filter(P_R=="GP") %>%
+                      filter(!is.infinite(umol.cm2.hr)))
+
+AIC(nitrate_linear_site_GP)
+AICc(nitrate_linear_site_GP)
+anova(nitrate_linear_site_GP)
+summary(nitrate_linear_site_GP)
+
+
+## phosphate 
+
+phosphate_linear_site_GP <- lmer(umol.cm2.hr ~ phosphate_umolL*site + (1|date/new_colonynumber), data=standardized_df %>%
+                      filter(P_R=="GP") %>%
+                      filter(!is.infinite(umol.cm2.hr)))
+
+AIC(phosphate_linear_site_GP)
+AICc(phosphate_linear_site_GP)
+anova(phosphate_linear_site_GP)
+summary(phosphate_linear_site_GP)
+
+## salinity
+salinity_linear_site_GP <- lmer(umol.cm2.hr ~ salinity*site + (1|date/new_colonynumber), data=standardized_df %>%
+                      filter(P_R=="GP") %>%
+                      filter(!is.infinite(umol.cm2.hr)))
+
+AIC(salinity_linear_site_GP)
+AICc(salinity_linear_site_GP)
+anova(salinity_linear_site_GP)
+summary(salinity_linear_site_GP)
+
+
+## pH 
+pH_linear_site_GP <- lmer(umol.cm2.hr ~ new_pH*site + (1|date/new_colonynumber), data=standardized_df %>%
+                      filter(P_R=="GP") %>%
+                      filter(!is.infinite(umol.cm2.hr)))
+
+AIC(pH_linear_site_GP)
+AICc(pH_linear_site_GP)
+anova(pH_linear_site_GP)
+summary(pH_linear_site_GP)
+
+## TA 
+TA_linear_site_GP <- lmer(umol.cm2.hr ~ TA_initial*site + (1|date/new_colonynumber), data=standardized_df %>%
+                      filter(P_R=="GP") %>%
+                      filter(!is.infinite(umol.cm2.hr)))
+
+AIC(TA_linear_site_GP)
+AICc(TA_linear_site_GP)
+anova(TA_linear_site_GP)
+summary(TA_linear_site_GP)
+
+
+##################
+# polynomial with site
+##################
+
+## silicate 
+silicate_poly_site_GP <- lmer(umol.cm2.hr ~ silicate_umolL*site + I(silicate_umolL^2) + (1|date/new_colonynumber), data=standardized_df %>%
+                      filter(P_R=="GP") %>%
+                      filter(!is.infinite(umol.cm2.hr)))
+
+AIC(silicate_poly_site_GP)
+AICc(silicate_poly_site_GP)
+anova(silicate_poly_site_GP)
+summary(silicate_poly_site_GP)
+
+## nitrate
+
+nitrate_poly_site_GP <- lmer(umol.cm2.hr ~ NN_umolL*site + I(NN_umolL^2) + (1|date/new_colonynumber), data=standardized_df %>%
+                      filter(P_R=="GP") %>%
+                      filter(!is.infinite(umol.cm2.hr)))
+
+AIC(nitrate_poly_site_GP)
+AICc(nitrate_poly_site_GP)
+anova(nitrate_poly_site_GP)
+summary(nitrate_poly_site_GP)
+
+## phosphate 
+
+phosphate_poly_site_GP <- lmer(umol.cm2.hr ~ phosphate_umolL*site + I(phosphate_umolL^2) + (1|date/new_colonynumber), data=standardized_df %>%
+                      filter(P_R=="GP") %>%
+                      filter(!is.infinite(umol.cm2.hr)))
+
+AIC(phosphate_poly_site_GP)
+AICc(phosphate_poly_site_GP)
+anova(phosphate_poly_site_GP)
+summary(phosphate_poly_site_GP)
+
+
+## salinity
+salinity_poly_site_GP <- lmer(umol.cm2.hr ~ salinity*site + I(salinity^2) + (1|date/new_colonynumber), data=standardized_df %>%
+                      filter(P_R=="GP") %>%
+                      filter(!is.infinite(umol.cm2.hr))) 
+
+AIC(salinity_poly_site_GP)
+AICc(salinity_poly_site_GP)
+anova(salinity_poly_site_GP)
+summary(salinity_poly_site_GP)
+
+## pH 
+pH_poly_site_GP <- lmer(umol.cm2.hr ~ new_pH*site + I(new_pH^2) + (1|date/new_colonynumber), data=standardized_df %>%
+                      filter(P_R=="GP") %>%
+                      filter(!is.infinite(umol.cm2.hr))) 
+
+AIC(pH_poly_site_GP)
+AICc(pH_poly_site_GP)
+anova(pH_poly_site_GP)
+summary(pH_poly_site_GP)
+
+## TA 
+TA_poly_site_GP <- lmer(umol.cm2.hr ~ TA_initial*site + I(TA_initial^2) + (1|date/new_colonynumber), data=standardized_df %>%
+                      filter(P_R=="GP") %>%
+                      filter(!is.infinite(umol.cm2.hr))) 
+
+AIC(TA_poly_site_GP)
+AICc(TA_poly_site_GP)
+anova(TA_poly_site_GP)
+summary(TA_poly_site_GP)
+
+##################
+# linear without site
+##################
+
+silicate_linear_NOsite_GP <- lmer(umol.cm2.hr ~ silicate_umolL + (1|date/new_colonynumber), data=standardized_df %>%
+                      filter(P_R=="GP") %>%
+                      filter(!is.infinite(umol.cm2.hr)))
+
+AIC(silicate_linear_NOsite_GP)
+AICc(silicate_linear_NOsite_GP)
+anova(silicate_linear_NOsite_GP)
+summary(silicate_linear_NOsite_GP)
+
+
+## nitrate
+nitrate_linear_NOsite_GP <- lmer(umol.cm2.hr ~ NN_umolL + (1|date/new_colonynumber), data=standardized_df %>%
+                      filter(P_R=="GP") %>%
+                      filter(!is.infinite(umol.cm2.hr)))
+
+AIC(nitrate_linear_NOsite_GP)
+AICc(nitrate_linear_NOsite_GP)
+anova(nitrate_linear_NOsite_GP)
+summary(nitrate_linear_NOsite_GP)
+
+
+## phosphate 
+
+phosphate_linear_NOsite_GP <- lmer(umol.cm2.hr ~ phosphate_umolL + (1|date/new_colonynumber), data=standardized_df %>%
+                      filter(P_R=="GP") %>%
+                      filter(!is.infinite(umol.cm2.hr)))
+
+AIC(phosphate_linear_NOsite_GP)
+AICc(phosphate_linear_NOsite_GP)
+anova(phosphate_linear_NOsite_GP)
+summary(phosphate_linear_NOsite_GP)
+
+
+## salinity
+salinity_linear_NOsite_GP <- lmer(umol.cm2.hr ~ salinity + (1|date/new_colonynumber), data=standardized_df %>%
+                      filter(P_R=="GP") %>%
+                      filter(!is.infinite(umol.cm2.hr)))
+
+AIC(salinity_linear_NOsite_GP)
+AICc(salinity_linear_NOsite_GP)
+anova(salinity_linear_NOsite_GP)
+summary(salinity_linear_NOsite_GP)
+
+## pH 
+pH_linear_NOsite_GP <- lmer(umol.cm2.hr ~ new_pH + (1|date/new_colonynumber), data=standardized_df %>%
+                      filter(P_R=="GP") %>%
+                      filter(!is.infinite(umol.cm2.hr)))
+
+AIC(pH_linear_NOsite_GP)
+AICc(pH_linear_NOsite_GP)
+anova(pH_linear_NOsite_GP)
+summary(pH_linear_NOsite_GP)
+
+## TA 
+TA_linear_NOsite_GP <- lmer(umol.cm2.hr ~ TA_initial + (1|date/new_colonynumber), data=standardized_df %>%
+                      filter(P_R=="GP") %>%
+                      filter(!is.infinite(umol.cm2.hr)))
+
+AIC(TA_linear_NOsite_GP)
+AICc(TA_linear_NOsite_GP)
+anova(TA_linear_NOsite_GP)
+summary(TA_linear_NOsite_GP)
+
+
+##################
+# polynomial without site
+##################
+
+## silicate 
+silicate_poly_NOsite_GP <- lmer(umol.cm2.hr ~ silicate_umolL + I(silicate_umolL^2) + (1|date/new_colonynumber), data=standardized_df %>%
+                      filter(P_R=="GP") %>%
+                      filter(!is.infinite(umol.cm2.hr))) 
+
+AIC(silicate_poly_NOsite_GP)
+AICc(silicate_poly_NOsite_GP)
+anova(silicate_poly_NOsite_GP)
+summary(silicate_poly_NOsite_GP)
+
+## nitrate
+
+nitrate_poly_NOsite_GP <- lmer(umol.cm2.hr ~ NN_umolL + I(NN_umolL^2) + (1|date/new_colonynumber), data=standardized_df %>%
+                      filter(P_R=="GP") %>%
+                      filter(!is.infinite(umol.cm2.hr)))
+
+AIC(nitrate_poly_NOsite_GP)
+AICc(nitrate_poly_NOsite_GP)
+anova(nitrate_poly_NOsite_GP)
+summary(nitrate_poly_NOsite_GP)
+
+## phosphate 
+
+phosphate_poly_NOsite_GP <- lmer(umol.cm2.hr ~ (phosphate_umolL + I(phosphate_umolL^2)) + (1|date/new_colonynumber), data=standardized_df %>%
+                      filter(P_R=="GP") %>%
+                      filter(!is.infinite(umol.cm2.hr)))
+
+AIC(phosphate_poly_NOsite_GP)
+AICc(phosphate_poly_NOsite_GP)
+anova(phosphate_poly_NOsite_GP)
+summary(phosphate_poly_NOsite_GP)
+
+## salinity
+salinity_poly_NOsite_GP <- lmer(umol.cm2.hr ~ salinity + I(salinity^2) + (1|date/new_colonynumber), data=standardized_df %>%
+                      filter(P_R=="GP") %>%
+                      filter(!is.infinite(umol.cm2.hr))) 
+
+AIC(salinity_poly_NOsite_GP)
+AICc(salinity_poly_NOsite_GP)
+anova(salinity_poly_NOsite_GP)
+summary(salinity_poly_NOsite_GP)
+
+
+## pH 
+pH_poly_NOsite_GP <- lmer(umol.cm2.hr ~ new_pH + I(new_pH^2) + (1|date/new_colonynumber), data=standardized_df %>%
+                      filter(P_R=="GP") %>%
+                      filter(!is.infinite(umol.cm2.hr))) 
+
+AIC(pH_poly_NOsite_GP)
+AICc(pH_poly_NOsite_GP)
+anova(pH_poly_NOsite_GP)
+summary(pH_poly_NOsite_GP)
+
+## TA 
+TA_poly_NOsite_GP <- lmer(umol.cm2.hr ~ TA_initial + I(TA_initial^2) + (1|date/new_colonynumber), data=standardized_df %>%
+                      filter(P_R=="GP") %>%
+                      filter(!is.infinite(umol.cm2.hr))) 
+
+AIC(TA_poly_NOsite_GP)
+AICc(TA_poly_NOsite_GP)
+anova(TA_poly_NOsite_GP)
+summary(TA_poly_NOsite_GP)
+
+
+################################################
+### COMPARE ALL GROSS PHOTOSYNTHESIS MODELS ###
+################################################
+anova(silicate_poly_NOsite_GP, phosphate_poly_NOsite_GP, nitrate_poly_NOsite_GP, salinity_poly_NOsite_GP, pH_poly_NOsite_GP, TA_poly_NOsite_GP, silicate_poly_site_GP, phosphate_poly_site_GP, nitrate_poly_site_GP, salinity_poly_site_GP, pH_poly_site_GP, TA_poly_site_GP, silicate_linear_NOsite_GP, phosphate_linear_NOsite_GP, nitrate_linear_NOsite_GP, salinity_linear_NOsite_GP, pH_linear_NOsite_GP, TA_linear_NOsite_GP, silicate_linear_site_GP, phosphate_linear_site_GP, nitrate_linear_site_GP, salinity_linear_site_GP, pH_linear_site_GP, TA_linear_site_GP)
+```
+
+
+### Calcification: 
+
+```{r}
+##################
+# linear with site
+##################
+
+## silicate 
+silicate_linear_site_C <- lmer(umol.cm2.hr ~ silicate_umolL*site + (1|date/new_colonynumber), data=standardized_df %>%
+                      filter(P_R=="C") %>%
+                      filter(!is.infinite(umol.cm2.hr)))
+
+anova(silicate_linear_site_C)
+summary(silicate_linear_site_C)
+AIC(silicate_linear_site_C)
+AICc(silicate_linear_site_C)
+
+
+## nitrate
+nitrate_linear_site_C <- lmer(umol.cm2.hr ~ NN_umolL*site + (1|date/new_colonynumber), data=standardized_df %>%
+                      filter(P_R=="C") %>%
+                      filter(!is.infinite(umol.cm2.hr)))
+
+AIC(nitrate_linear_site_C)
+AICc(nitrate_linear_site_C)
+anova(nitrate_linear_site_C)
+summary(nitrate_linear_site_C)
+
+
+## phosphate 
+
+phosphate_linear_site_C <- lmer(umol.cm2.hr ~ phosphate_umolL*site + (1|date/new_colonynumber), data=standardized_df %>%
+                      filter(P_R=="C") %>%
+                      filter(!is.infinite(umol.cm2.hr)))
+
+AIC(phosphate_linear_site_C)
+AICc(phosphate_linear_site_C)
+anova(phosphate_linear_site_C)
+summary(phosphate_linear_site_C)
+
+## salinity
+salinity_linear_site_C <- lmer(umol.cm2.hr ~ salinity*site + (1|date/new_colonynumber), data=standardized_df %>%
+                      filter(P_R=="C") %>%
+                      filter(!is.infinite(umol.cm2.hr)))
+
+AIC(salinity_linear_site_C)
+AICc(salinity_linear_site_C)
+anova(salinity_linear_site_C)
+summary(salinity_linear_site_C)
+
+
+## pH 
+pH_linear_site_C <- lmer(umol.cm2.hr ~ new_pH*site + (1|date/new_colonynumber), data=standardized_df %>%
+                      filter(P_R=="C") %>%
+                      filter(!is.infinite(umol.cm2.hr)))
+
+AIC(pH_linear_site_C)
+AICc(pH_linear_site_C)
+anova(pH_linear_site_C)
+summary(pH_linear_site_C)
+
+## TA 
+TA_linear_site_C <- lmer(umol.cm2.hr ~ TA_initial*site + (1|date/new_colonynumber), data=standardized_df %>%
+                      filter(P_R=="C") %>%
+                      filter(!is.infinite(umol.cm2.hr)))
+
+AIC(TA_linear_site_C)
+AICc(TA_linear_site_C)
+anova(TA_linear_site_C)
+summary(TA_linear_site_C)
+
+
+##################
+# polynomial with site
+##################
+
+## silicate 
+silicate_poly_site_C <- lmer(umol.cm2.hr ~ silicate_umolL*site + I(silicate_umolL^2) + (1|date/new_colonynumber), data=standardized_df %>%
+                      filter(P_R=="C") %>%
+                      filter(!is.infinite(umol.cm2.hr)))
+
+AIC(silicate_poly_site_C)
+AICc(silicate_poly_site_C)
+anova(silicate_poly_site_C)
+summary(silicate_poly_site_C)
+
+## nitrate
+
+nitrate_poly_site_C <- lmer(umol.cm2.hr ~ NN_umolL*site + I(NN_umolL^2) + (1|date/new_colonynumber), data=standardized_df %>%
+                      filter(P_R=="C") %>%
+                      filter(!is.infinite(umol.cm2.hr)))
+
+AIC(nitrate_poly_site_C)
+AICc(nitrate_poly_site_C)
+anova(nitrate_poly_site_C)
+summary(nitrate_poly_site_C)
+
+## phosphate 
+
+phosphate_poly_site_C <- lmer(umol.cm2.hr ~ phosphate_umolL*site + I(phosphate_umolL^2) + (1|date/new_colonynumber), data=standardized_df %>%
+                      filter(P_R=="C") %>%
+                      filter(!is.infinite(umol.cm2.hr)))
+
+AIC(phosphate_poly_site_C)
+AICc(phosphate_poly_site_C)
+anova(phosphate_poly_site_C)
+summary(phosphate_poly_site_C)
+
+
+## salinity
+salinity_poly_site_C <- lmer(umol.cm2.hr ~ salinity*site + I(salinity^2) + (1|date/new_colonynumber), data=standardized_df %>%
+                      filter(P_R=="C") %>%
+                      filter(!is.infinite(umol.cm2.hr))) 
+
+AIC(salinity_poly_site_C)
+AICc(salinity_poly_site_C)
+anova(salinity_poly_site_C)
+summary(salinity_poly_site_C)
+
+## pH 
+pH_poly_site_C <- lmer(umol.cm2.hr ~ new_pH*site + I(new_pH^2) + (1|date/new_colonynumber), data=standardized_df %>%
+                      filter(P_R=="C") %>%
+                      filter(!is.infinite(umol.cm2.hr))) 
+
+AIC(pH_poly_site_C)
+AICc(pH_poly_site_C)
+anova(pH_poly_site_C)
+summary(pH_poly_site_C)
+
+## TA 
+TA_poly_site_C <- lmer(umol.cm2.hr ~ TA_initial*site + I(TA_initial^2) + (1|date/new_colonynumber), data=standardized_df %>%
+                      filter(P_R=="C") %>%
+                      filter(!is.infinite(umol.cm2.hr))) 
+
+AIC(TA_poly_site_C)
+AICc(TA_poly_site_C)
+anova(TA_poly_site_C)
+summary(TA_poly_site_C)
+
+##################
+# linear without site
+##################
+
+silicate_linear_NOsite_C <- lmer(umol.cm2.hr ~ silicate_umolL + (1|date/new_colonynumber), data=standardized_df %>%
+                      filter(P_R=="C") %>%
+                      filter(!is.infinite(umol.cm2.hr)))
+
+AIC(silicate_linear_NOsite_C)
+AICc(silicate_linear_NOsite_C)
+anova(silicate_linear_NOsite_C)
+summary(silicate_linear_NOsite_C)
+
+
+## nitrate
+nitrate_linear_NOsite_C <- lmer(umol.cm2.hr ~ NN_umolL + (1|date/new_colonynumber), data=standardized_df %>%
+                      filter(P_R=="C") %>%
+                      filter(!is.infinite(umol.cm2.hr)))
+
+AIC(nitrate_linear_NOsite_C)
+AICc(nitrate_linear_NOsite_C)
+anova(nitrate_linear_NOsite_C)
+summary(nitrate_linear_NOsite_C)
+
+
+## phosphate 
+
+phosphate_linear_NOsite_C <- lmer(umol.cm2.hr ~ phosphate_umolL + (1|date/new_colonynumber), data=standardized_df %>%
+                      filter(P_R=="C") %>%
+                      filter(!is.infinite(umol.cm2.hr)))
+
+AIC(phosphate_linear_NOsite_C)
+AICc(phosphate_linear_NOsite_C)
+anova(phosphate_linear_NOsite_C)
+summary(phosphate_linear_NOsite_C)
+
+
+## salinity
+salinity_linear_NOsite_C <- lmer(umol.cm2.hr ~ salinity + (1|date/new_colonynumber), data=standardized_df %>%
+                      filter(P_R=="C") %>%
+                      filter(!is.infinite(umol.cm2.hr)))
+
+AIC(salinity_linear_NOsite_C)
+AICc(salinity_linear_NOsite_C)
+anova(salinity_linear_NOsite_C)
+summary(salinity_linear_NOsite_C)
+
+## pH 
+pH_linear_NOsite_C <- lmer(umol.cm2.hr ~ new_pH + (1|date/new_colonynumber), data=standardized_df %>%
+                      filter(P_R=="C") %>%
+                      filter(!is.infinite(umol.cm2.hr)))
+
+AIC(pH_linear_NOsite_C)
+AICc(pH_linear_NOsite_C)
+anova(pH_linear_NOsite_C)
+summary(pH_linear_NOsite_C)
+
+## TA 
+TA_linear_NOsite_C <- lmer(umol.cm2.hr ~ TA_initial + (1|date/new_colonynumber), data=standardized_df %>%
+                      filter(P_R=="C") %>%
+                      filter(!is.infinite(umol.cm2.hr)))
+
+AIC(TA_linear_NOsite_C)
+AICc(TA_linear_NOsite_C)
+anova(TA_linear_NOsite_C)
+summary(TA_linear_NOsite_C)
+
+
+##################
+# polynomial without site
+##################
+
+## silicate 
+silicate_poly_NOsite_C <- lmer(umol.cm2.hr ~ silicate_umolL + I(silicate_umolL^2) + (1|date/new_colonynumber), data=standardized_df %>%
+                      filter(P_R=="C") %>%
+                      filter(!is.infinite(umol.cm2.hr))) 
+
+AIC(silicate_poly_NOsite_C)
+AICc(silicate_poly_NOsite_C)
+anova(silicate_poly_NOsite_C)
+summary(silicate_poly_NOsite_C)
+
+## nitrate
+
+nitrate_poly_NOsite_C <- lmer(umol.cm2.hr ~ NN_umolL + I(NN_umolL^2) + (1|date/new_colonynumber), data=standardized_df %>%
+                      filter(P_R=="C") %>%
+                      filter(!is.infinite(umol.cm2.hr)))
+
+AIC(nitrate_poly_NOsite_C)
+AICc(nitrate_poly_NOsite_C)
+anova(nitrate_poly_NOsite_C)
+summary(nitrate_poly_NOsite_C)
+
+## phosphate 
+
+phosphate_poly_NOsite_C <- lmer(umol.cm2.hr ~ (phosphate_umolL + I(phosphate_umolL^2)) + (1|date/new_colonynumber), data=standardized_df %>%
+                      filter(P_R=="C") %>%
+                      filter(!is.infinite(umol.cm2.hr)))
+
+AIC(phosphate_poly_NOsite_C)
+AICc(phosphate_poly_NOsite_C)
+anova(phosphate_poly_NOsite_C)
+summary(phosphate_poly_NOsite_C)
+
+## salinity
+salinity_poly_NOsite_C <- lmer(umol.cm2.hr ~ salinity + I(salinity^2) + (1|date/new_colonynumber), data=standardized_df %>%
+                      filter(P_R=="C") %>%
+                      filter(!is.infinite(umol.cm2.hr))) 
+
+AIC(salinity_poly_NOsite_C)
+AICc(salinity_poly_NOsite_C)
+anova(salinity_poly_NOsite_C)
+summary(salinity_poly_NOsite_C)
+
+
+## pH 
+pH_poly_NOsite_C <- lmer(umol.cm2.hr ~ new_pH + I(new_pH^2) + (1|date/new_colonynumber), data=standardized_df %>%
+                      filter(P_R=="C") %>%
+                      filter(!is.infinite(umol.cm2.hr))) 
+
+AIC(pH_poly_NOsite_C)
+AICc(pH_poly_NOsite_C)
+anova(pH_poly_NOsite_C)
+summary(pH_poly_NOsite_C)
+
+## TA 
+TA_poly_NOsite_C <- lmer(umol.cm2.hr ~ TA_initial + I(TA_initial^2) + (1|date/new_colonynumber), data=standardized_df %>%
+                      filter(P_R=="C") %>%
+                      filter(!is.infinite(umol.cm2.hr))) 
+
+AIC(TA_poly_NOsite_C)
+AICc(TA_poly_NOsite_C)
+aanova(TA_poly_NOsite_C)
+summary(TA_poly_NOsite_C)
+
+
+################################################
+### COMPARE ALL CALCIFICATION MODELS ###
+################################################
+anova(silicate_poly_NOsite_C, phosphate_poly_NOsite_C, nitrate_poly_NOsite_C, salinity_poly_NOsite_C, pH_poly_NOsite_C, TA_poly_NOsite_C, silicate_poly_site_C, phosphate_poly_site_C, nitrate_poly_site_C, salinity_poly_site_C, pH_poly_site_C, TA_poly_site_C, silicate_linear_NOsite_C, phosphate_linear_NOsite_C, nitrate_linear_NOsite_C, salinity_linear_NOsite_C, pH_linear_NOsite_C, TA_linear_NOsite_C, silicate_linear_site_C, phosphate_linear_site_C, nitrate_linear_site_C, salinity_linear_site_C, pH_linear_site_C, TA_linear_site_C)
+```
+
+
+# SECTION 2: PLOTTING
+-  For Respiration: top models are for nitrate (linear and poly without site) and silicate (~3 deltaAIC, poly without site)
+-  For Gross Photosynthesis: top models are silicate (poly with and without site) and nitrate (~5 deltaAIC)
+-  For Calcification: top models are phosphate (all 4 model types are the leading fit) with next best parameter as TA (~11 deltaAIC)
+
+### Respiration 
+```{r}
+###################################
+## Respiration plots, Nitrate
+###################################
+### first isolate just R values 
+### use original df because don't want to use standardized values on plot, use raw values 
+R_only <- respo_df_edited %>%
+  filter(!is.infinite(umol.cm2.hr)) %>%
+  filter(P_R=="R") #%>% 
+  #mutate(log_NN_umolL = log(NN_umolL))
+
+# make a new dataset that is smooth and creates the same length lines for everything. Doing it this way makes it look cleaner
+R_nitrate <- tibble(umol.cm2.hr = rep(seq(0,0.5,0.01),14), # min to max ranges from ~ 0 - 0.5. There are 14 colonies so repeat this sequence 14 times
+                    NN_umolL =rep(seq(0, 5.0, 0.1),14), # the min NN_umolL is ~0 and the max is ~ 5 --> make a sequence that is within that range that is the same length as the sequence for R umol.cm2.hr values
+                  new_colonynumber = c(rep(1,51),rep(2,51),rep(3,51),rep(4,51), # repeat each colony number the same size as the new NN and umol data
+                                       rep(5,51),rep(6,51),rep(7,51),rep(8,51),
+                                       rep(13,51),rep(14,51),rep(15,51),rep(16,51),
+                                       rep(17,51),rep(18,51)),
+                  date = c(rep("6/17/23",51),rep("6/17/23",51),rep("6/17/23",51),rep("6/18/23",51), # make a date vector that aligns with each colony vector that is all the same length
+                             rep("6/21/23",51),rep("6/21/23",51),rep("6/22/23",51),rep("6/22/23",51),
+                             rep("6/10/23",51),rep("6/10/23",51),rep("6/11/23",51),rep("6/11/23",51),
+                             rep("6/12/23",51),rep("6/12/23",51)),
+                  site  = ifelse(new_colonynumber %in% 1:8, "Varari","Cabral")) # but in the site names
+
+# create a color gradient for Varari
+colfunc_V <- colorRampPalette(c("firebrick1", "firebrick4"))
+Vcolors<-colfunc_V(8) # create 8 colors between the lightest and darkest firebrick
+
+# create a color gradient for Cabral
+colfunc_c <- colorRampPalette(c("goldenrod1", "goldenrod4"))
+Ccolors<-colfunc_c(6) # create 8 colors between the lightest and darkest goldenrod. There are only 6 Cabral corals
+
+color_values<-c(Vcolors,Ccolors) # make a color value for everything together
+
+##model 
+NN_linear_NOsite_R <- lmer(umol.cm2.hr ~ log(NN_umolL) + (1|date/new_colonynumber), data=respo_df_edited %>%
+                      filter(P_R=="R") %>%
+                      filter(!is.infinite(umol.cm2.hr))) 
+
+# create a new dataframe that is the size of the prediction dataframe - predictor data needs to be identical as the model 
+NN_df_R <- tibble(NN = R_nitrate$NN_umolL,
+                  log_NN = R_nitrate$log_NN_umolL,
+                  pred_umol = predict(NN_linear_NOsite_R, newdata = R_nitrate),
+                  new_colonynumber = as.factor(R_nitrate$new_colonynumber))
+anova(NN_linear_NOsite_R)
+
+Rplot_NN <- ggplot() + # first plot the original data in the background and make it a bit transparent
+  geom_point(data = R_only, 
+             alpha = 0.5, 
+             aes(x= NN_umolL,
+                 y= umol.cm2.hr,
+                 color = factor(new_colonynumber),
+                 fill = site), # I added fill = site so that I can remove the colony number legend and just have one for site for ease of interpretation
+             shape = 21 # this shape makes the color the border and fill the middle
+             ) + # bring in the raw data first.  Because I wanted to show this on the raw scale I used raw DIN and then transformed it
+  geom_line(data = NN_df_R, 
+            aes(x = NN, # Make prediction lines this needs to be spelled the same as the plot dataframe with new data.. not the original one.
+                y = pred_umol,
+                color = new_colonynumber), 
+            linetype = 1, size = 0.7, show.legend = "FALSE") +
+  coord_trans(x ="log") + # transform the axes
+  scale_color_manual(values = color_values) + # add in the color values
+  scale_fill_manual(values = c("goldenrod","firebrick"))+ # add in fill values for site
+#  scale_x_continuous(breaks = c(2,10,20,30))+
+ # scale_x_continuous(breaks = c(2.29,9.08,18.23,27.09))+
+  scale_y_continuous(breaks = c(0.1,0.2,0.3,0.4,0.5)) +
+  guides(color = "none") + # delete the guide for color
+  labs(linetype = NULL,
+       color = " ",
+       fill = " ",
+       x = expression(NN~(mu*mol~L^-1)),
+       y = expression(Respiration~(mu*mol~cm^-1~hr^-1)) )+
+  theme_bw()+
+  theme(legend.position = "top",
+        legend.text = element_text(size = 16),
+        axis.text = element_text(size = 14),
+        axis.title = element_text(size = 16),
+        plot.title = element_text(face = 2, hjust = 0.5),
+        panel.border = element_rect(fill = NA, linewidth = 0.2))
+
+Rplot_NN
+
+###################################
+## Gross Photosynthesis plots, Silicate
+###################################
+
+
+###################################
+## Calcification plots, Phosphate
+###################################
+
+```
+
+### Gross Photosynthesis 
+```{r}
+### first isolate just GP values
+GP_only <- respo_df_edited %>%
+  filter(!is.infinite(umol.cm2.hr)) %>%
+  filter(P_R=="GP") %>% 
+  mutate(log_nitrate = log(NN_umolL))
+
+### make a new dataset that is smooth and creates the same length lines for everything.  Doing it this way makes it look cleaner
+### check the min and max ranges for umol.cm2.hr
+min(GP_only$umol.cm2.hr)
+max(GP_only$umol.cm2.hr)
+### check the min and max ranges for log silicate
+min(GP_only$log_nitrate)
+max(GP_only$log_nitrate)
+
+### error in vector lengths from these two sequences, figure out how to get them matching lengths 
+# min to max ranges from ~ 0.18 - 1.4. The first number is the min, the second number is the max value you want, and the third number is the interval you want to build the sequence with. There are 14 colonies so repeat this sequence 14 times (fourth number)
+
+GP_newdata <- tibble(umol.cm2.hr = rep(seq(0,0.5,0.01),14), # min to max ranges from ~ 0 - 0.5. There are 14 colonies so repeat this sequence 14 times
+                     log_nitrate = rep(seq(-3.5,2.0,0.11),14))
+
+, # the min log Si is -3.2 and the max is ~ 1.5 - make a a sequence that is within that range that is the same length as the sequence for R
+                  nitrate = exp(log_nitrate), # take the exponent of the log Si to get raw si
+                  new_colonynumber = c(rep(1,51),rep(2,51),rep(3,51),rep(4,51), # repeat each colony number the same size as the new silicate and umol data
+                                       rep(5,51),rep(6,51),rep(7,51),rep(8,51),
+                                       rep(13,51),rep(14,51),rep(15,51),rep(16,51),
+                                       rep(17,51),rep(18,51)),
+                  date = c(rep("6/17/23",51),rep("6/17/23",51),rep("6/17/23",51),rep("6/18/23",51), # make a date vector that alignes with each colony vector that is all the same length
+                             rep("6/21/23",51),rep("6/21/23",51),rep("6/22/23",51),rep("6/22/23",51),
+                             rep("6/10/23",51),rep("6/10/23",51),rep("6/11/23",51),rep("6/11/23",51),
+                             rep("6/12/23",51),rep("6/12/23",51)),
+                  site  = ifelse(new_colonynumber %in% 1:8, "Varari","Cabral")) # but in the site names
+
+# create a color gradient for Varari
+colfunc_V <- colorRampPalette(c("firebrick1", "firebrick4"))
+Vcolors<-colfunc_V(8) # create 8 colors between the lightest and darkest firebrick
+
+# create a color gradient for Cabral
+colfunc_c <- colorRampPalette(c("goldenrod1", "goldenrod4"))
+Ccolors<-colfunc_c(6) # create 8 colors between the lightest and darkest goldenrod. There are only 6 Cabral corals
+
+color_values <- c(Vcolors,Ccolors) # make a color value for everything together
+
+# create a new dataframe that is the size of the prediction dataframe
+plot_df_GP <- tibble(silicate = GP_newdata$silicate,
+                    log_silicate = GP_newdata$log_silicate,
+                    pred_umol = predict(modeltest_GP, newdata = GP_newdata),
+                    new_colonynumber = as.factor(GP_newdata$new_colonynumber))
+
+GPplot <- ggplot() + # first plot the original data in the background and make it a bit transparent
+  geom_point(data = GP_only, 
+             alpha = 0.5, 
+             aes(x= silicate_umolL,
+                 y= umol.cm2.hr,
+                 color = factor(new_colonynumber),
+                 fill = site), # I added fill = site so that I can remove the colony number legend and just have one for site for ease of interpretation
+             shape = 21 # this shape makes the color the border and fill the middle
+             ) + # bring in the raw data first.  Because I wanted to show this on the raw scale I used raw silicate and then transformed it
+  geom_line(data = plot_df_GP, 
+            aes(x = silicate, # Make prediction lines this needs to be spelled the same as the plot datframe with new data.. not your original one.
+                y = pred_umol,
+                color = new_colonynumber), 
+            linetype = 1, size = 0.7, show.legend = "FALSE") +
+  coord_trans(x ="log") + # transform the axes
+    scale_color_manual(values = color_values) + # add in the color values
+  scale_fill_manual(values = c("goldenrod","firebrick"))+ # add in fill values for site
+  scale_x_continuous(breaks = c(2,10,20,30))+
+  scale_y_continuous(breaks = c(0.2,0.4,0.6,0.8,1.0, 1.2, 1.4)) +
+  facet_wrap(~new_colonynumber) +
+  guides(color = "none") + # delete the guide for color
+  labs(linetype = NULL,
+       color = " ",
+       fill = " ",
+       x = expression(Silicate~(mu*mol~L^-1)),
+       y = expression(Gross~Photosynthesis~(mu*mol~cm^-1~hr^-1))) +
+  theme_bw()+
+  theme(legend.position = "top",
+        legend.text = element_text(size = 16),
+        axis.text = element_text(size = 14),
+        axis.title = element_text(size = 16),
+        plot.title = element_text(face = 2, hjust = 0.5),
+        panel.border = element_rect(fill = NA, linewidth = 0.2))
+
+GPplot
+```
+
+
+
+
+
+
+
+
+
+# SECTION 3: TESTING AMMONIA VALUES FOR WONKINESS - JUST GOING TO NOT USE AMMONIA 
+
+### Test NH4 values 
+```{r}
+## convert the ammonia column to numeric from character which was defaulted because of "<0.02" values 
+## convert the new colony number column to be a character bc used as IDs for the different corals
+
+respo_df <- respo_df %>% 
+  mutate(ammonia_umolL = as.numeric(ammonia_umolL), 
+         new_colonynumber = as.character(new_colonynumber)) 
+
+
+## make a simple plot 
+ammonia_values_check <- respo_df %>% 
+  ggplot(aes(x=log(silicate_umolL+1), 
+             y=ammonia_umolL,
+             color=date, 
+             shape = site)) + 
+  geom_point(size=4) + 
+  theme_bw()
+
+ammonia_values_check
+
+## RESULTS: looks like the 11th had pretty high ammonia + no strong trend between SGD increase and ammonia inc/dec 
+
+```
+
+
+## Add in new column for DIN to re-run plots with DIN and NN instead of silicate 
+-  Plot just respiration for example with DIN instead of silicate 
+
+-  RESULT OF MODEL: looks like log DIN and log DIN squared are significant, but no difference between sites 
+-  RESULT OF PLOT: why is it tailing off way past 30????
+```{r}
+respo_df_DIN <- respo_df %>% 
+  mutate(ammonia_umolL = if_else(is.na(ammonia_umolL), 0.02, ammonia_umolL)) %>% ## make any ammonia values that were convered to NA from <0.02 to just 0.02
+  mutate(DIN_umolL = NN_umolL+ammonia_umolL) %>% ## create DIN column to use in figures 
+  mutate(log_DIN = log(DIN_umolL + 1), 
+         log_DIN2 = (log_DIN^2), 
+         date=factor(date))
+
+## create model for DIN: 
+model_R <- lmer(umol.cm2.hr ~ log_DIN*site + I(log_DIN^2) + (1|date/new_colonynumber), data=respo_df_DIN %>%
+                      filter(P_R=="R") %>%
+                      filter(!is.infinite(umol.cm2.hr)))
+anova(model_R)
+summary(model_R)
+r.squaredGLMM(model_R)
+
+
+## now plot: 
+### based on reference from stack overflow on how to visualize a mixed model with random effects
+### create a new dataframe that has x var (NN/DIN), z var (color by colony number), and then create y values using predict function
+### logged or not logged silicate? LOGGED because that is what is in model 
+
+### first isolate just R values
+R_only <- respo_df_DIN %>%
+  filter(!is.infinite(umol.cm2.hr)) %>%
+  filter(P_R=="R")
+
+# make a new dataset that is smooth and creates the same length lines for everything. Doing it this way makes it look cleaner
+R_newdata <- tibble(umol.cm2.hr = rep(seq(0,0.5,0.01),14), # min to max ranges from ~ 0 - 0.5. There are 14 colonies so repeat this sequence 14 times
+                  log_DIN =rep(seq(0,28.0,0.55),14), # the min log DIN is ~0.09 and the max is ~ 27- make a sequence that is within that range that is the same length as the sequence for R
+                  DIN = exp(log_DIN), # take the exponent of the log DIN to get raw DIN
+                  new_colonynumber = c(rep(1,51),rep(2,51),rep(3,51),rep(4,51), # repeat each colony number the same size as the new DIN and umol data
+                                       rep(5,51),rep(6,51),rep(7,51),rep(8,51),
+                                       rep(13,51),rep(14,51),rep(15,51),rep(16,51),
+                                       rep(17,51),rep(18,51)),
+                  date = c(rep("6/17/23",51),rep("6/17/23",51),rep("6/17/23",51),rep("6/18/23",51), # make a date vector that aligns with each colony vector that is all the same length
+                             rep("6/21/23",51),rep("6/21/23",51),rep("6/22/23",51),rep("6/22/23",51),
+                             rep("6/10/23",51),rep("6/10/23",51),rep("6/11/23",51),rep("6/11/23",51),
+                             rep("6/12/23",51),rep("6/12/23",51)),
+                  site  = ifelse(new_colonynumber %in% 1:8, "Varari","Cabral")) # but in the site names
+
+# create a color gradient for Varari
+colfunc_V <- colorRampPalette(c("firebrick1", "firebrick4"))
+Vcolors<-colfunc_V(8) # create 8 colors between the lightest and darkest firebrick
+
+# create a color gradient for Cabral
+colfunc_c <- colorRampPalette(c("goldenrod1", "goldenrod4"))
+Ccolors<-colfunc_c(6) # create 8 colors between the lightest and darkest goldenrod. There are only 6 Cabral corals
+
+color_values<-c(Vcolors,Ccolors) # make a color value for everything together
+
+# create a new dataframe that is the size of the prediction dataframe
+plot_df_R <- tibble(DIN = R_newdata$DIN,
+                    log_DIN = R_newdata$log_DIN,
+                    pred_umol = predict(model_R, newdata = R_newdata),
+                    new_colonynumber = as.factor(R_newdata$new_colonynumber))
+
+Rplot <- ggplot() + # first plot the original data in the background and make it a bit transparent
+  geom_point(data = R_only, 
+             alpha = 0.5, 
+             aes(x= DIN_umolL,
+                 y= umol.cm2.hr,
+                 color = factor(new_colonynumber),
+                 fill = site), # I added fill = site so that I can remove the colony number legend and just have one for site for ease of interpretation
+             shape = 21 # this shape makes the color the border and fill the middle
+             ) + # bring in the raw data first.  Because I wanted to show this on the raw scale I used raw DIN and then transformed it
+  geom_line(data = plot_df_R, 
+            aes(x = DIN, # Make prediction lines this needs to be spelled the same as the plot dataframe with new data.. not the original one.
+                y = pred_umol,
+                color = new_colonynumber), 
+            linetype = 1, size = 0.7, show.legend = "FALSE") +
+  coord_trans(x ="log") + # transform the axes
+  scale_color_manual(values = color_values) + # add in the color values
+  scale_fill_manual(values = c("goldenrod","firebrick"))+ # add in fill values for site
+  scale_x_continuous(breaks = c(2,10,20,30))+
+ # scale_x_continuous(breaks = c(2.29,9.08,18.23,27.09))+
+  scale_y_continuous(breaks = c(0.1,0.2,0.3,0.4,0.5)) +
+  guides(color = "none") + # delete the guide for color
+  labs(linetype = NULL,
+       color = " ",
+       fill = " ",
+       x = expression(DIN~(mu*mol~L^-1)),
+       y = expression(Respiration~(mu*mol~cm^-1~hr^-1)) )+
+  theme_bw()+
+  theme(legend.position = "top",
+        legend.text = element_text(size = 16),
+        axis.text = element_text(size = 14),
+        axis.title = element_text(size = 16),
+        plot.title = element_text(face = 2, hjust = 0.5),
+        panel.border = element_rect(fill = NA, linewidth = 0.2))
+Rplot
+  
+```
+
+## Re-make models for each physio rate and env parameter
+
+
+
+
+
+
+
+

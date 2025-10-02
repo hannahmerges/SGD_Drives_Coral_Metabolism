@@ -51,7 +51,7 @@ MooreaAugust_addedOffshore <- MooreaMarch_edit %>%
 ################
 AmbSW <- MooreaAugust_addedOffshore %>% 
   filter(Plate_Seep == "Offshore", 
-         Parameter == "Silicate_umolL") 
+         Parameter == "TA") 
 
 max(AmbSW$value, na.rm=TRUE)
 min(AmbSW$value, na.rm=TRUE) 

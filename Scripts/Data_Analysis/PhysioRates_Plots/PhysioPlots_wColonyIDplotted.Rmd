@@ -18,15 +18,14 @@ library(lmerTest)
 library(MuMIn)
 ```
 
-## Read in data 
+# Set working directory
 ```{r}
-#RespoR_Normalized_Full_withNEC_nutrients <- read_csv("R_only.csv")
+setwd("/Users/hannahmerges/Desktop/Repositories/SGD_Drives_Coral_Metabolism") # Full path
 ```
 
-# Understanding concentrations of treatments: 
+## Read in data
 ```{r}
-nutrient_conc <- RespoR_Normalized_Full_withNEC_nutrients %>% 
-  group_by()
+RespoR_Normalized_Full_withNEC_nutrients <- here(read_csv("Data", "RespoR_Normalized_Full_withNEC_nutrients.csv"))
 ```
 
 
@@ -62,13 +61,13 @@ R_only <- RespoR_Normalized_Full_withNEC_nutrients %>%
 
 # make a new dataset that is smooth and creates the same length lines for everything.  Doing it this way makes it look cleaner
 R_newdata <- tibble(umol.cm2.hr = rep(seq(0,0.5,0.01),14), # min to max ranges from ~ 0 - 0.5. There are 14 colonies so repeat this sequence 14 times
-                  log_silicate =rep(seq(0.5,3.5,0.06),14), # the min log Si is ~1 and the max is ~ 3.3- make a a sequence that is within that range that is the same length as the sequence for R
+                  log_silicate = rep(seq(0.5,3.5,0.06),14), # the min log Si is ~1 and the max is ~ 3.3- make a a sequence that is within that range that is the same length as the sequence for R
                   silicate = exp(log_silicate), # take the exponent of the log Si to get raw si
                   new_colonynumber = c(rep(1,51),rep(2,51),rep(3,51),rep(4,51), # repeat each colony number the same size as the new silicate and umol data
                                        rep(5,51),rep(6,51),rep(7,51),rep(8,51),
                                        rep(13,51),rep(14,51),rep(15,51),rep(16,51),
                                        rep(17,51),rep(18,51)),
-                  date = c(rep("6/17/23",51),rep("6/17/23",51),rep("6/17/23",51),rep("6/18/23",51), # make a date vector that alignes with each colony vector that is all the same length
+                  date = c(rep("6/17/23",51),rep("6/17/23",51),rep("6/17/23",51),rep("6/18/23",51), # make a date vector that aligns with each colony vector that is all the same length
                              rep("6/21/23",51),rep("6/21/23",51),rep("6/22/23",51),rep("6/22/23",51),
                              rep("6/10/23",51),rep("6/10/23",51),rep("6/11/23",51),rep("6/11/23",51),
                              rep("6/12/23",51),rep("6/12/23",51)),
