@@ -10,7 +10,7 @@ knitr::opts_chunk$set(echo = TRUE)
 ```
 
 ## Load libraries
-```{r}
+```{r, message=FALSE}
 library(here)
 library(tidyverse)
 library(lme4)
@@ -20,12 +20,12 @@ library(MuMIn)
 
 # Set working directory
 ```{r}
-setwd("/Users/hannahmerges/Desktop/Repositories/SGD_Drives_Coral_Metabolism") # Full path
+setwd("/Users/hannahmerges/Desktop/Backup_HMThesis/SGD_Drives_Coral_Metabolism") 
 ```
 
 ## Read in data
 ```{r}
-RespoR_Normalized_Full_withNEC_nutrients <- here(read_csv("Data", "RespoR_Normalized_Full_withNEC_nutrients.csv"))
+RespoR_Normalized_Full_withNEC_nutrients <- here::here(read_csv("Data","RespoR_Normalized_Full_withNEC_allnutrients.csv"))
 ```
 
 
