@@ -10,13 +10,14 @@ knitr::opts_chunk$set(echo = TRUE)
 ```
 
 ## Load libraries 
-```{r, message=FALSE}
+```{r, message=FALSE, warning=FALSE}
 library(here)
 library(lme4)
 library(lmerTest)
 library(MuMIn)
 library(performance)
 library(tidyverse)
+library(patchwork)
 ```
 
 ## Comments from the Reviewers and thoughts for re-analyzing: 
@@ -28,11 +29,11 @@ library(tidyverse)
 
 ## Read in Data 
 ```{r, message=FALSE}
-respo_df <- read_csv(here::here("Data", "RespoR_Normalized_Full_withNEC_andallnutrients.csv"))
+#respo_df <- read_csv(here::here("Data", "RespoR_Normalized_Full_withNEC_andallnutrients.csv"))
 ## full datasheet with GP, R, and C rates along with all env data
 ## TA data is ONLY in rows for calcification 
-respo_df %>% 
-  write_csv(here::here("Data", "respo_df.csv"))
+#respo_df %>% 
+ # write_csv(here::here("Data", "respo_df.csv"))
 
 #########
 ## need to get TA values into respiration and gross photosynthesis rows as well 
@@ -45,7 +46,7 @@ respo_df_edited <- read_csv(here::here("Data", "respo_df_edited.csv"))
 respo_df_edited <- respo_df_edited %>% 
   mutate(ammonia_umolL = as.numeric(ammonia_umolL), 
          new_colonynumber = as.character(new_colonynumber), 
-         ammonia_umolL = if_else(is.na(ammonia_umolL), 0.02, ammonia_umolL)) ## make any ammonia values that were convered to NA from <0.02 to just 0.02) 
+         ammonia_umolL = if_else(is.na(ammonia_umolL), 0.02, ammonia_umolL)) ## make any ammonia values that were converted to NA from <0.02 to just 0.02) 
 
 ```
 
@@ -56,17 +57,17 @@ respo_df_edited <- respo_df_edited %>%
 ```{r}
 # AICs are based off of the effect size - change that here 
 standardized_df <- respo_df_edited %>% 
-  filter(sample_ID != "Varari_Col4_Dil9_Light") %>% 
+  filter(sample_ID != "Varari_Col4_Dil9_Light") %>% ## this sample was an outlier
   dplyr::select(P_R, date, sample_ID, site, new_colonynumber, umol.cm2.hr, phosphate_umolL:NN_umolL, salinity, TA_initial, new_pH) %>% 
   mutate_at(vars(phosphate_umolL:new_pH), .funs = "log") %>% 
   mutate_at(vars(phosphate_umolL:new_pH), .funs = "scale") %>% 
   mutate_at(vars(phosphate_umolL:new_pH), .funs = "as.numeric")
 ```
 
+# NOTE: Built AIC table with interaction term with parameter (ie. phosphate:site)
 
 ### Respiration: 
 -  NN is coming out on top for linear, without site model
-
 
 ```{r}
 ##################
@@ -1019,10 +1020,11 @@ Rplot_NN <- ggplot() + # first plot the original data in the background and make
 
 Rplot_NN
 ggsave(here::here("Outputs", "JEBResubmission", "R_Nitrate.jpg"), 
-       width=12, height=15)
+       width=12, height=13)
 ```
 
-### Gross Photosynthesis 
+### Gross Photosynthesis:
+-  second best fit models (phosphate, silicate, and pH)
 ```{r}
 ### first isolate just GP values in new df 
 GP_only <- respo_df_edited %>%
@@ -1098,11 +1100,8 @@ GPplot <- ggplot() + # first plot the original data in the background and make i
 
 GPplot
 ggsave(here::here("Outputs", "JEBResubmission", "GP_Nitrate.jpg"), 
-       width=12, height=15)
+       width=12, height=13)
 ```
-
-### Gross Photosynthesis: 
--  second best fit models (phoshpate, silicate, and pH)
 
 ### double checking model significance and checking for outliers that skew the data 
 ```{r}
@@ -1261,7 +1260,7 @@ Cplot <- ggplot() + # first plot the original data in the background and make it
 
 Cplot
 ggsave(here::here("Outputs", "JEBResubmission", "C_silicate.jpg"), 
-       width=12, height=15)
+       width=12, height=13)
 
 ###############################
 ## PLOTTING pH AND CALCIFICATION 
@@ -1272,7 +1271,7 @@ standardized_df <- standardized_df %>%
          log_silicate = silicate_umolL, 
          log_pH = new_pH)
 
-pH_linear_NOsite_C <- lmer(umol.cm2.hr ~ pH + (1|date/new_colonynumber), data=standardized_df %>%
+pH_linear_NOsite_C <- lmer(umol.cm2.hr ~ log_pH + (1|date/new_colonynumber), data=standardized_df %>%
                       filter(P_R=="C") %>%
                       filter(!is.infinite(umol.cm2.hr)))
 
@@ -1297,7 +1296,7 @@ plot_df_C <- tibble(pH = C_newdata$pH,
                     pred_umol = predict(pH_linear_NOsite_C, newdata = C_newdata),
                     new_colonynumber = as.factor(C_newdata$new_colonynumber))
 
-Cplot <- ggplot() + # first plot the original data in the background and make it a bit transparent
+Cplot2 <- ggplot() + # first plot the original data in the background and make it a bit transparent
   geom_point(data = C_only, 
              alpha = 0.5, 
              aes(x= new_pH,
@@ -1331,12 +1330,20 @@ Cplot <- ggplot() + # first plot the original data in the background and make it
         plot.title = element_text(face = 2, hjust = 0.5),
         panel.border = element_rect(fill = NA, linewidth = 0.2))
 
-Cplot
+Cplot2
 ggsave(here::here("Outputs", "JEBResubmission", "C_pH.jpg"), 
-       width=12, height=15)
+       width=12, height=13)
 
 
 ```
+
+
+### Patch all the plots together 
+```{r}
+Rplot_NN + GPplot + Cplot + Cplot2
+```
+
+
 
 ### Bonus: Look at potential for N:P plots 
 
@@ -1387,6 +1394,19 @@ summary(NN_linear_NOsite_GP)
 
 
 # SECTION 3: Make a kable table to display AIC, pvalues, effect size, and st error for each model 
+```{r}
+
+
+
+
+
+
+
+
+```
+
+
+
 
 
 
