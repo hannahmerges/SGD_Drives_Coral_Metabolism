@@ -41,12 +41,13 @@ library(patchwork)
 ## Important notes: Varari_Col5_Dil1_Light is missing/deleted
 ## manually entered TA values into R and GP from C, saved as respo_df_edited. Use this one for model selection
 
-respo_df_edited <- read_csv(here::here("Data", "respo_df_edited.csv"))
+respo_df_edited <- read_csv(here::here("Data","respo_df_edited.csv"))
 
 respo_df_edited <- respo_df_edited %>% 
   mutate(ammonia_umolL = as.numeric(ammonia_umolL), 
          new_colonynumber = as.character(new_colonynumber), 
-         ammonia_umolL = if_else(is.na(ammonia_umolL), 0.02, ammonia_umolL)) ## make any ammonia values that were converted to NA from <0.02 to just 0.02) 
+         ammonia_umolL = if_else(is.na(ammonia_umolL), 0.02, ammonia_umolL), ## make any ammonia values that were converted to NA from <0.02 to just 0.02) 
+         log_nitrate = log(NN_umolL+1)) 
 
 ```
 
@@ -206,7 +207,7 @@ anova(TA_poly_site_R)
 summary(TA_poly_site_R)
 
 ##################
-# linear without site
+# linear without site - TOP FITTING MODEL 
 ##################
 
 silicate_linear_NOsite_R <- lmer(umol.cm2.hr ~ silicate_umolL + (1|date/new_colonynumber), data=standardized_df %>%
@@ -219,6 +220,7 @@ anova(silicate_linear_NOsite_R)
 summary(silicate_linear_NOsite_R)
 
 
+
 ## nitrate
 nitrate_linear_NOsite_R <- lmer(umol.cm2.hr ~ NN_umolL + (1|date/new_colonynumber), data=standardized_df %>%
                       filter(P_R=="R") %>%
@@ -229,6 +231,10 @@ AICc(nitrate_linear_NOsite_R)
 anova(nitrate_linear_NOsite_R)
 summary(nitrate_linear_NOsite_R)
 
+pred_nitrate_df <- data.frame(NN_umolL = seq(0, 4, by = 0.1))
+
+predicted_rates <- predict(nitrate_linear_NOsite_R, newdata = pred_nitrate_df, re.form = NA)
+predicted_rates
 
 ## phosphate 
 
@@ -907,7 +913,7 @@ TA_poly_NOsite_C <- lmer(umol.cm2.hr ~ TA_initial + I(TA_initial^2) + (1|date/ne
 
 AIC(TA_poly_NOsite_C)
 AICc(TA_poly_NOsite_C)
-aanova(TA_poly_NOsite_C)
+anova(TA_poly_NOsite_C)
 summary(TA_poly_NOsite_C)
 
 
@@ -952,6 +958,7 @@ NN_linear_NOsite_R <- lmer(umol.cm2.hr ~ log_nitrate + (1|date/new_colonynumber)
 
 
 # make a new dataset that is smooth and creates the same length lines for everything. Doing it this way makes it look cleaner
+## create this dataset based off of the raw data (in this case the R_only dataset using respo_df_edited)
 R_newdata_nitrate <- tibble(umol.cm2.hr = rep(seq(0,0.5,0.01), each = 1, length.out = 714), # min to max ranges from ~ 0 - 0.5. There are 14 colonies so repeat this sequence 14 times
                      log_nitrate = rep(seq(0.01,1.7,0.0335),14), # the min log NN is ~0.03 and the max is ~ 1.7- make a a sequence that is within that range that is the same length as the sequence for R (aka 14)
                      nitrate = rep(seq(0.04,4.67,0.092),14),
@@ -1001,15 +1008,19 @@ Rplot_NN <- ggplot() + # first plot the original data in the background and make
             linetype = 1, size = 0.7, show.legend = "FALSE") +
   coord_trans(x ="log") + # transform the axes
   scale_color_manual(values = color_values) + # add in the color values
-  scale_fill_manual(values = c("goldenrod","firebrick"))+ # add in fill values for site
+  scale_fill_manual(values = c("goldenrod","firebrick"), 
+                    guide="none")+ # add in fill values for site
   scale_x_continuous(breaks = c(0.1,0.3,1,3,6))+
   scale_y_continuous(breaks = c(0.1,0.2,0.3,0.4,0.5)) +
+  geom_smooth(data = R_only, 
+              aes(x = NN_umolL, y = umol.cm2.hr), 
+              method = "lm", formula = y~log(x), color = "black", linewidth = 1.5, se=FALSE) +
   guides(color = "none") + # delete the guide for color
   labs(linetype = NULL,
        color = " ",
        fill = " ",
        x = expression(Nitrate~(mu*mol~L^-1)),
-       y = expression(Respiration~(mu*mol~cm^-1~hr^-1)) )+
+       y = expression(Respiration~(mu*mol~O[2]~cm^-2~hr^-1)) )+
   theme_bw()+
   theme(legend.position = "top",
         legend.text = element_text(size = 16),
@@ -1020,7 +1031,7 @@ Rplot_NN <- ggplot() + # first plot the original data in the background and make
 
 Rplot_NN
 ggsave(here::here("Outputs", "JEBResubmission", "R_Nitrate.jpg"), 
-       width=12, height=13)
+       width=8, height=10)
 ```
 
 ### Gross Photosynthesis:
@@ -1041,7 +1052,12 @@ GP_only <- respo_df_edited %>%
 ### now pull in model that was used to determine NN as best parameter for GP rates
 NN_linear_NOsite_GP <- lmer(umol.cm2.hr ~ log_nitrate + (1|date/new_colonynumber), data=standardized_df %>%
                       filter(P_R=="GP") %>%
+                       # filter(umol.cm2.hr < 1.4) %>% 
                       filter(!is.infinite(umol.cm2.hr)))
+
+anova(NN_linear_NOsite_GP)
+summary(NN_linear_NOsite_GP)
+ranef(NN_linear_NOsite_GP)
 
 
 GP_newdata <- tibble(umol.cm2.hr = rep(seq(0,1.5,0.01), each = 1, length.out = 714), # min to max ranges from ~ 0.18 - 1.4. The first number is the min, the second number is the max value you want, and the third number is the interval you want to build the sequence with. There are 14 colonies so repeat this sequence 14 times (fourth number)
@@ -1080,16 +1096,20 @@ GPplot <- ggplot() + # first plot the original data in the background and make i
             linetype = 1, size = 0.7, show.legend = "FALSE") +
   coord_trans(x ="log") + # transform the axes
     scale_color_manual(values = color_values) + # add in the color values
-  scale_fill_manual(values = c("goldenrod","firebrick"))+ # add in fill values for site, use from code chunk above in respiration plot 
-  scale_x_continuous(breaks = c(0.05,0.1,0.25,0.5, 1.0, 2.0, 4.0))+
+  scale_fill_manual(values = c("goldenrod","firebrick"), 
+                    guide="none")+ # add in fill values for site, use from code chunk above in respiration plot 
+  scale_x_continuous(breaks = c(0.1,0.3, 1.0, 3.0))+
   scale_y_continuous(breaks = c(0.2,0.4,0.6,0.8,1.0, 1.2, 1.4)) +
+  geom_smooth(data = GP_only, 
+              aes(x = NN_umolL, y = umol.cm2.hr), 
+              method = "lm", formula = y~log(x), color = "black", linewidth = 1.5, se=FALSE) +
  # facet_wrap(~new_colonynumber) +
   guides(color = "none") + # delete the guide for color
   labs(linetype = NULL,
        color = " ",
        fill = " ",
        x = expression(Nitrate~(mu*mol~L^-1)),
-       y = expression(Gross~Photosynthesis~(mu*mol~cm^-1~hr^-1))) +
+       y = expression(Gross~Photosynthesis~(mu*mol~O[2]~cm^-2~hr^-1))) +
   theme_bw()+
   theme(legend.position = "top",
         legend.text = element_text(size = 16),
@@ -1100,8 +1120,548 @@ GPplot <- ggplot() + # first plot the original data in the background and make i
 
 GPplot
 ggsave(here::here("Outputs", "JEBResubmission", "GP_Nitrate.jpg"), 
-       width=12, height=13)
+       width=8, height=10)
 ```
+
+
+### Calcification plot 
+```{r}
+C_only <- respo_df_edited %>%
+  dplyr::mutate(log_silicate = log(silicate_umolL+1), 
+                log_silicate2 = (log_silicate^2), 
+                log_nitrate = log(NN_umolL+1), 
+                log_nitrate2 = (log_nitrate^2), 
+                log_phosphate = log(phosphate_umolL+1), 
+                log_phosphate2 = (log_phosphate^2),
+                date=factor(date)) %>% 
+  filter(!is.infinite(umol.cm2.hr), 
+         sample_ID != "Varari_Col4_Dil9_Light") %>% ## this individual sample was an outlier so remove from analyses 
+  filter(P_R=="C") 
+
+
+## PLOTTING pH AND CALCIFICATION 
+
+# need to edit dataset slightly 
+standardized_df <- standardized_df %>% 
+  mutate(log_nitrate=NN_umolL, 
+         log_silicate = silicate_umolL, 
+         log_pH = new_pH)
+
+pH_linear_NOsite_C <- lmer(umol.cm2.hr ~ log_pH + (1|date/new_colonynumber), data=standardized_df %>%
+                      filter(P_R=="C") %>%
+                      filter(!is.infinite(umol.cm2.hr)))
+
+
+# Reorder new_colonynumber and convert to factor with the correct levels
+C_newdata <- tibble(umol.cm2.hr = rep(seq(0,1.5,0.01), each = 1, length.out = 714),
+                    log_pH = rep(seq(-3.5,3.5,0.14), 14),
+                    pH = rep(seq(7.9,8.1,0.004),14),
+                    new_colonynumber = c(rep(1,51),rep(2,51),rep(3,51),rep(4,51),
+                              rep(5,51),rep(6,51),rep(7,51),rep(8,51),
+                              rep(13,51),rep(14,51),rep(15,51),rep(16,51),
+                              rep(17,51),rep(18,51)),
+                    date = c(rep("6/17/23",51),rep("6/17/23",51),rep("6/17/23",51),rep("6/18/23",51),
+                             rep("6/21/23",51),rep("6/21/23",51),rep("6/22/23",51),rep("6/22/23",51),
+                             rep("6/10/23",51),rep("6/10/23",51),rep("6/11/23",51),rep("6/11/23",51),
+                             rep("6/12/23",51),rep("6/12/23",51)),
+                    site = ifelse(new_colonynumber %in% 1:8, "Varari", "Cabral"))
+
+# Ensure new_colonynumber is a factor in the plot dataframe as well
+plot_df_C <- tibble(pH = C_newdata$pH,
+                    log_pH = C_newdata$log_pH,
+                    pred_umol = predict(pH_linear_NOsite_C, newdata = C_newdata),
+                    new_colonynumber = as.factor(C_newdata$new_colonynumber))
+
+Cplot2 <- ggplot() + # first plot the original data in the background and make it a bit transparent
+  geom_point(data = C_only, 
+             alpha = 0.5, 
+             aes(x= new_pH,
+                 y= umol.cm2.hr,
+                 color = factor(new_colonynumber),
+                 fill = site), # I added fill = site so that I can remove the colony number legend and just have one for site for ease of interpretation
+             shape = 21 # this shape makes the color the border and fill the middle
+             ) + # bring in the raw data first.  Because I wanted to show this on the raw scale I used raw silicate and then transformed it
+  geom_line(data = plot_df_C, 
+            aes(x = pH, # Make prediction lines this needs to be spelled the same as the plot datframe with new data.. not your original one.
+                y = pred_umol,
+                color = new_colonynumber), 
+            linetype = 1, size = 0.7, show.legend = "FALSE") +
+#  coord_trans(x ="log") + # transform the axes
+  scale_color_manual(values = color_values, guide = "none") + # add in the color values
+  scale_fill_manual(values = c("goldenrod","firebrick"), 
+                    guide = "none") + # add in fill values for site
+  scale_x_continuous(breaks = c(8.1, 8.0, 7.9)) +
+  scale_y_continuous(breaks = c(-0.5,-0.25, 0, 0.25,0.5)) +
+  geom_smooth(data = C_only, 
+              aes(x = new_pH, y = umol.cm2.hr), 
+              method = "lm", formula = y~log(x), color = "black", linewidth = 1.5, se= FALSE) +
+#guides(color = "none") + # delete the guide for color
+  labs(linetype = NULL,
+       color = " ",
+       fill = " ",
+       x = expression(pH),
+       y = expression(Calcification~(mu*mol~CaCO[3]~g^-1~hr^-1))) +
+  theme_bw()+
+  theme(legend.position = "top",
+        legend.text = element_text(size = 16),
+        axis.text = element_text(size = 14),
+        axis.title = element_text(size = 16),
+        plot.title = element_text(face = 2, hjust = 0.5),
+        panel.border = element_rect(fill = NA, linewidth = 0.2))
+
+Cplot2
+ggsave(here::here("Outputs", "JEBResubmission", "C_pH.jpg"), 
+       width=8, height=10)
+
+
+```
+
+
+### Patch all the plots together for main figure 
+```{r}
+physioplots <- (Rplot_NN / GPplot / Cplot2) #+ plot_annotation(tag_levels = "A")
+
+physioplots
+ggsave(here::here("Outputs", "JEBResubmission", "main_physioplots.jpg"), 
+       width=4, height=12)
+
+```
+
+
+### Additional supplemental figures
+-  Gross Photosynthesis plots: phosphate
+-  Calcification plot: silicate 
+
+```{r}
+#############################
+## gross photosynthesis plot 
+#############################
+
+### phosphate 
+GP_only <- respo_df_edited %>%
+  dplyr::mutate(log_silicate = log(silicate_umolL+1), 
+                log_silicate2 = (log_silicate^2), 
+                log_nitrate = log(NN_umolL+1), 
+                log_nitrate2 = (log_nitrate^2), 
+                log_phosphate = log(phosphate_umolL+1), 
+                log_phosphate2 = (log_phosphate^2),
+                date=factor(date)) %>% 
+  filter(!is.infinite(umol.cm2.hr)) %>%
+  filter(P_R=="GP") 
+
+
+# need to edit dataset slightly 
+standardized_df <- standardized_df %>% 
+  mutate(log_nitrate=NN_umolL, 
+         log_silicate = silicate_umolL, 
+         log_phosphate = phosphate_umolL)
+
+###############################
+## phosphate
+
+### now pull in model that was used to determine NN as best parameter for GP rates
+phosphate_linear_NOsite_GP <- lmer(umol.cm2.hr ~ log_phosphate + (1|date/new_colonynumber), data=standardized_df %>%
+                      filter(P_R=="GP") %>%
+                      filter(!is.infinite(umol.cm2.hr)))
+
+
+# based off of raw data (in this case: respo_df_edited)
+GP_newdata <- tibble(umol.cm2.hr = rep(seq(0,1.5,0.01), each = 1, length.out = 714), # min to max ranges from ~ 0.18 - 1.4. The first number is the min, the second number is the max value you want, and the third number is the interval you want to build the sequence with. There are 14 colonies so repeat this sequence 14 times (fourth number)
+                  log_phosphate = rep(seq(0.01, 0.8, 0.0157),14), # the min log phos is 0.0198 and the max is 0.727 - make a a sequence that is within that range that is the same length as the sequence for R (aka 14)
+                  phosphate = rep(seq(0.01,1.1,0.0215),14), ## between 0.02 and 1.07
+                  new_colonynumber = c(rep(1,51),rep(2,51),rep(3,51),rep(4,51), # repeat each colony number the same size as the new silicate and umol data
+                                       rep(5,51),rep(6,51),rep(7,51),rep(8,51),
+                                       rep(13,51),rep(14,51),rep(15,51),rep(16,51),
+                                       rep(17,51),rep(18,51)),
+                  date = c(rep("6/17/23",51),rep("6/17/23",51),rep("6/17/23",51),rep("6/18/23",51), # make a date vector that alignes with each colony vector that is all the same length
+                             rep("6/21/23",51),rep("6/21/23",51),rep("6/22/23",51),rep("6/22/23",51),
+                             rep("6/10/23",51),rep("6/10/23",51),rep("6/11/23",51),rep("6/11/23",51),
+                             rep("6/12/23",51),rep("6/12/23",51)),
+                  site  = ifelse(new_colonynumber %in% 1:8, "Varari","Cabral")) # but in the site names
+
+
+# create a new dataframe that is the size of the prediction dataframe
+plot_df_GP <- tibble(phosphate = GP_newdata$phosphate,
+                    log_phosphate = GP_newdata$log_phosphate,
+                    pred_umol = predict(phosphate_linear_NOsite_GP, newdata = GP_newdata),
+                    new_colonynumber = as.factor(GP_newdata$new_colonynumber))
+
+GPplot_supplement <- ggplot() + # first plot the original data in the background and make it a bit transparent
+  geom_point(data = GP_only, 
+             alpha = 0.5, 
+             aes(x= phosphate_umolL,
+                 y= umol.cm2.hr,
+                 color = factor(new_colonynumber),
+                 fill = site), # I added fill = site so that I can remove the colony number legend and just have one for site for ease of interpretation
+             shape = 21 # this shape makes the color the border and fill the middle
+             ) + # bring in the raw data first.  Because I wanted to show this on the raw scale I used raw silicate and then transformed it
+  geom_line(data = plot_df_GP, 
+            aes(x = phosphate, # Make prediction lines this needs to be spelled the same as the plot dataframe with new data.. not your original one.
+                y = pred_umol,
+                color = new_colonynumber), 
+            linetype = 1, size = 0.7, show.legend = "FALSE") +
+  coord_trans(x ="log") + # transform the axes
+  scale_color_manual(values = color_values) + # add in the color values
+  scale_fill_manual(values = c("goldenrod","firebrick"), guide="none")+ # add in fill values for site, use from code chunk above in respiration plot 
+  scale_x_continuous(breaks = c(0.02,0.05,0.1,0.25,0.5, 1.0))+
+  scale_y_continuous(breaks = c(0.2,0.4,0.6,0.8,1.0, 1.2, 1.4)) +
+  geom_smooth(data = GP_only, 
+              aes(x = phosphate_umolL, y = umol.cm2.hr), 
+              method = "lm", formula = y~log(x), color = "black", linewidth = 1.5, se= FALSE) +
+  labs(linetype = NULL,
+       color = " ",
+       fill = " ",
+       x = expression(Phosphate~(mu*mol~L^-1)),
+       y = expression(Gross~Photosynthesis~(mu*mol~O[2]~cm^-2~hr^-1))) +
+  guides(color = "none") + # delete the guide for color
+  theme_bw()+
+  theme(legend.position = "top",
+        legend.text = element_text(size = 16),
+        axis.text = element_text(size = 14),
+        axis.title = element_text(size = 16),
+        plot.title = element_text(face = 2, hjust = 0.5),
+        panel.border = element_rect(fill = NA, linewidth = 0.2))
+
+GPplot_supplement
+ggsave(here::here("Outputs", "JEBResubmission", "GP_Phos_Supplement.jpg"), 
+       width=12, height=13)
+
+##############################
+### silicate
+##############################
+
+silicate_linear_NOsite_GP <- lmer(umol.cm2.hr ~ log_silicate + (1|date/new_colonynumber), data=standardized_df %>%
+                      filter(P_R=="GP") %>%
+                      filter(!is.infinite(umol.cm2.hr)))
+
+
+# based off of raw data (in this case: GP_only built from respo_df_edited)
+GP_newdata <- tibble(umol.cm2.hr = rep(seq(0,1.5,0.01), each = 1, length.out = 714), # min to max ranges from ~ 0.18 - 1.4. The first number is the min, the second number is the max value you want, and the third number is the interval you want to build the sequence with. There are 14 colonies so repeat this sequence 14 times (fourth number)
+                  log_silicate = rep(seq(1.0,3.3, 0.046),14), # the min log silicate is 1.02 and the max is 3.28 - make a a sequence that is within that range that is the same length as the sequence for R (aka 14) ## FOR THIS, TRIAL AND ERROR, PLUG AND CHUG VALUES TO REPLACE 0.046 VALUE WITH ONE THAT FITS EVENLY FOR GIVEN RANGE 
+                  silicate = rep(seq(1.7,26,0.48),14), ## between 1.78 and 25.70
+                  new_colonynumber = c(rep(1,51),rep(2,51),rep(3,51),rep(4,51), # repeat each colony number the same size as the new silicate and umol data
+                                       rep(5,51),rep(6,51),rep(7,51),rep(8,51),
+                                       rep(13,51),rep(14,51),rep(15,51),rep(16,51),
+                                       rep(17,51),rep(18,51)),
+                  date = c(rep("6/17/23",51),rep("6/17/23",51),rep("6/17/23",51),rep("6/18/23",51), # make a date vector that alignes with each colony vector that is all the same length
+                             rep("6/21/23",51),rep("6/21/23",51),rep("6/22/23",51),rep("6/22/23",51),
+                             rep("6/10/23",51),rep("6/10/23",51),rep("6/11/23",51),rep("6/11/23",51),
+                             rep("6/12/23",51),rep("6/12/23",51)),
+                  site  = ifelse(new_colonynumber %in% 1:8, "Varari","Cabral")) # but in the site names
+
+
+# create a new dataframe that is the size of the prediction dataframe
+plot_df_GP <- tibble(silicate = GP_newdata$silicate,
+                    log_silicate = GP_newdata$log_silicate,
+                    pred_umol = predict(silicate_linear_NOsite_GP, newdata = GP_newdata),
+                    new_colonynumber = as.factor(GP_newdata$new_colonynumber))
+
+GPplot_supplement_silicate <- ggplot() + # first plot the original data in the background and make it a bit transparent
+  geom_point(data = GP_only, 
+             alpha = 0.5, 
+             aes(x= silicate_umolL,
+                 y= umol.cm2.hr,
+                 color = factor(new_colonynumber),
+                 fill = site), # I added fill = site so that I can remove the colony number legend and just have one for site for ease of interpretation
+             shape = 21 # this shape makes the color the border and fill the middle
+             ) + # bring in the raw data first.  Because I wanted to show this on the raw scale I used raw silicate and then transformed it
+  geom_line(data = plot_df_GP, 
+            aes(x = silicate, # Make prediction lines this needs to be spelled the same as the plot datframe with new data.. not your original one.
+                y = pred_umol,
+                color = new_colonynumber), 
+            linetype = 1, size = 0.7, show.legend = "FALSE") +
+  coord_trans(x ="log") + # transform the axes
+    scale_color_manual(values = color_values) + # add in the color values
+  scale_fill_manual(values = c("goldenrod","firebrick"), guide="none")+ # add in fill values for site, use from code chunk above in respiration plot 
+  scale_x_continuous(breaks = c(2,10,20,30))+
+  scale_y_continuous(breaks = c(0.2,0.4,0.6,0.8,1.0, 1.2, 1.4)) +
+  geom_smooth(data = GP_only, 
+              aes(x = silicate_umolL, y = umol.cm2.hr), 
+              method = "lm", formula = y~log(x), color = "black", linewidth = 1.5, se= FALSE) +
+  labs(linetype = NULL,
+       color = " ",
+       fill = " ",
+       x = expression(Silicate~(mu*mol~L^-1)),
+       y = expression(Gross~Photosynthesis~(mu*mol~O[2]~cm^-2~hr^-1))) +
+  guides(color = "none") + # delete the guide for color
+  theme_bw()+
+  theme(legend.position = "top",
+        legend.text = element_text(size = 16),
+        axis.text = element_text(size = 14),
+        axis.title = element_text(size = 16),
+        plot.title = element_text(face = 2, hjust = 0.5),
+        panel.border = element_rect(fill = NA, linewidth = 0.2))
+
+GPplot_supplement_silicate
+ggsave(here::here("Outputs", "JEBResubmission", "GP_Silicate_Supplement.jpg"), 
+       width=12, height=13)
+
+
+
+############################
+## Calcification suuplemental plots - silicate 
+############################
+
+silicate_linear_NOsite_C <- lmer(umol.cm2.hr ~ log_silicate + (1|date/new_colonynumber), data=standardized_df %>%
+                      filter(P_R=="C") %>%
+                      filter(!is.infinite(umol.cm2.hr)))
+
+
+# Reorder new_colonynumber and convert to factor with the correct levels
+C_newdata <- tibble(umol.cm2.hr = rep(seq(0,1.5,0.01), each = 1, length.out = 714),
+                    log_silicate = rep(seq(1.0,3.3,0.046), 14), ##1.02 - 3.28
+                    silicate = rep(seq(1.7,26,0.48),14), ##1.78-25.70
+                    new_colonynumber = c(rep(1,51),rep(2,51),rep(3,51),rep(4,51),
+                              rep(5,51),rep(6,51),rep(7,51),rep(8,51),
+                              rep(13,51),rep(14,51),rep(15,51),rep(16,51),
+                              rep(17,51),rep(18,51)),
+                    date = c(rep("6/17/23",51),rep("6/17/23",51),rep("6/17/23",51),rep("6/18/23",51),
+                             rep("6/21/23",51),rep("6/21/23",51),rep("6/22/23",51),rep("6/22/23",51),
+                             rep("6/10/23",51),rep("6/10/23",51),rep("6/11/23",51),rep("6/11/23",51),
+                             rep("6/12/23",51),rep("6/12/23",51)),
+                    site = ifelse(new_colonynumber %in% 1:8, "Varari", "Cabral"))
+
+# Ensure new_colonynumber is a factor in the plot dataframe as well
+plot_df_C <- tibble(silicate = C_newdata$silicate,
+                    log_silicate = C_newdata$log_silicate,
+                    pred_umol = predict(silicate_linear_NOsite_C, newdata = C_newdata),
+                    new_colonynumber = as.factor(C_newdata$new_colonynumber))
+
+Cplot_silicateSupp <- ggplot() + # first plot the original data in the background and make it a bit transparent
+  geom_point(data = C_only, 
+             alpha = 0.5, 
+             aes(x= silicate_umolL,
+                 y= umol.cm2.hr,
+                 color = factor(new_colonynumber),
+                 fill = site), # I added fill = site so that I can remove the colony number legend and just have one for site for ease of interpretation
+             shape = 21 # this shape makes the color the border and fill the middle
+             ) + # bring in the raw data first.  Because I wanted to show this on the raw scale I used raw silicate and then transformed it
+  geom_line(data = plot_df_C, 
+            aes(x = silicate, # Make prediction lines this needs to be spelled the same as the plot datframe with new data.. not your original one.
+                y = pred_umol,
+                color = new_colonynumber), 
+            linetype = 1, size = 0.7, show.legend = "FALSE") +
+#  coord_trans(x ="log") + # transform the axes
+  scale_color_manual(values = color_values, guide = "none") + # add in the color values
+  scale_fill_manual(values = c("goldenrod","firebrick"), 
+                    guide = "none") + # add in fill values for site
+  scale_x_continuous(breaks = c(2,10,20,30)) +
+  scale_y_continuous(breaks = c(-0.5,-0.25, 0, 0.25,0.5)) +
+  geom_smooth(data = C_only, 
+              aes(x = silicate_umolL, y = umol.cm2.hr), 
+              method = "lm", formula = y~log(x), color = "black", linewidth = 1.5, se= FALSE) +
+#guides(color = "none") + # delete the guide for color
+  labs(linetype = NULL,
+       color = " ",
+       fill = " ",
+       x = expression(Silicate~(mu*mol~L^-1)),
+       y = expression(Calcification~(mu*mol~CaCO[3]~g^-1~hr^-1))) +
+  theme_bw()+
+  theme(legend.position = "top",
+        legend.text = element_text(size = 16),
+        axis.text = element_text(size = 14),
+        axis.title = element_text(size = 16),
+        plot.title = element_text(face = 2, hjust = 0.5),
+        panel.border = element_rect(fill = NA, linewidth = 0.2))
+
+Cplot_silicateSupp
+ggsave(here::here("Outputs", "JEBResubmission", "C_silicate.jpg"), 
+       width=8, height=10)
+
+
+
+```
+
+
+### Calculate percent change in R/GP for changes in nitrate 
+
+```{r}
+
+######################
+## calculating percent change in R from NN 
+######################
+R_percentchange_model <- lmer(umol.cm2.hr ~ log_nitrate + (1|date/new_colonynumber), data=respo_df_edited %>%
+                      filter(P_R=="R") %>%
+                      filter(!is.infinite(umol.cm2.hr)))
+
+
+summary(R_percentchange_model)
+
+## slope = -0.04684
+## intercept = 0.36367
+
+# equation for 0.04 NN 
+Resp_min = (-0.04684*0.03922071) + 0.36367
+Resp_min
+##  0.3618329
+
+# equation for 1.04 NN
+Resp_max = (-0.04684*0.7129498) + 0.36367
+Resp_max
+
+## 0.3302754
+
+## percent change in Resp across 1 umol of NN 
+
+R_percentchange = (0.3302754 - 0.3618329)/0.3618329
+R_percentchange*100
+
+######################
+## calculating percent change in GP from NN 
+######################
+
+GP_percentchange_model <- lmer(umol.cm2.hr ~ log_nitrate + (1|date/new_colonynumber), data=respo_df_edited %>%
+                      filter(P_R=="GP") %>%
+                      filter(!is.infinite(umol.cm2.hr)))
+
+
+summary(GP_percentchange_model)
+
+## slope = -0.07080
+## intercept = 0.78930    
+
+# equation for 0.04 NN (y=mx + b) where x = log(0.04 umolL NN) and then slope and intercept are plugged in from the summary of the model above 
+GP_min = (-0.07080*0.03922071) + 0.78930  
+GP_min
+##  0.7865232
+
+# equation for 1.04 NN where x = log(1.04 umolL NN) and then slope and intercept are plugged in from the summary of the model above 
+GP_max = (-0.07080*0.7129498) + 0.78930  
+GP_max
+
+##  0.7388232
+
+## percent change in Resp across 1 umol of NN (GPmax - GPmin/GPmin) * 100 
+
+GP_percentchange = (0.7388232 - 0.7865232)/0.7865232
+GP_percentchange*100
+## -6.064665
+
+######################
+## calculating percent change in C from pH 
+######################
+
+C_percentchange_model <- lmer(umol.cm2.hr ~ new_pH + (1|date/new_colonynumber), data=respo_df_edited %>%
+                      filter(P_R=="C") %>%
+                      filter(!is.infinite(umol.cm2.hr)))
+
+
+summary(C_percentchange_model)
+
+## slope = 0.8130
+## intercept = -6.4101   
+
+# equation for 7.973796 pH (y=mx + b) where x = already logged b/c pH and then slope and intercept are plugged in from the summary of the model above 
+C_min = (0.8130*7.973796) + -6.4101    
+C_min
+##  0.07259615
+
+# equation for 8.074194 pH where x = already logged b/c pH and then slope and intercept are plugged in from the summary of the model above 
+C_max = (0.8130*8.074194) + -6.4101    
+C_max
+
+##  0.1542197
+
+## percent change in C over 0.1 unit change in pH (Cmax - Cmin/Cmin) * 100 
+
+C_percentchange = (0.1542197 - 0.07259615)/0.07259615
+C_percentchange*100
+## 112.4351
+
+
+```
+
+
+
+
+
+
+### Bonus: Look at potential for N:P plots 
+
+```{r}
+## Plot NN over Phosphate with raw data -- rethinking N:P ratio
+
+NN_Phos <- respo_df_edited %>% 
+  filter(P_R=="C", 
+         sample_ID != "Varari_Col4_Dil9_Light") %>% 
+  ggplot(aes(x=NN_umolL/phosphate_umolL, 
+             y=umol.cm2.hr)) + 
+  geom_point(aes(color=new_colonynumber)) + 
+  coord_trans(x="log") + 
+  facet_wrap(~new_colonynumber, scales="free")
+
+## model 
+## if want to get AIC will need to add to standardized df 
+respo_df_edited <- respo_df_edited %>% 
+  mutate(N_P = NN_umolL/phosphate_umolL)
+
+NtoP <- lmer(umol.cm2.hr ~ N_P + (1|date/new_colonynumber), data=respo_df_edited %>%
+                      filter(P_R=="R") %>%
+                      filter(sample_ID != "Varari_Col4_Dil9_Light") %>% 
+                      filter(!is.infinite(umol.cm2.hr)))
+anova(NtoP)
+summary(NtoP)
+
+
+
+### nitrate plots 
+NNplot <- standardized_df %>% 
+  filter(P_R=="GP") %>% 
+  ggplot(aes(x=NN_umolL, 
+             y=umol.cm2.hr)) + 
+  geom_point(aes(color=new_colonynumber)) 
+
+NNplot
+
+
+NN_linear_NOsite_GP <- lmer(umol.cm2.hr ~ NN_umolL + (1|date/new_colonynumber), data=standardized_df %>%
+                      filter(P_R=="R") %>%
+                      filter(!is.infinite(umol.cm2.hr)))
+
+summary(NN_linear_NOsite_GP)
+```
+
+### Bonus: Calculate N:P ratio for 
+```{r}
+respo_df_NP <- respo_df_edited %>% 
+   filter(sample_ID != "Varari_Col4_Dil9_Light") %>% 
+  mutate(N_P=NN_umolL/phosphate_umolL) 
+
+min(respo_df_NP$N_P)
+max(respo_df_NP$N_P)
+## N:P ratios range from 0.3333 to 142.00s
+
+## based on site: 
+respo_df_NP_V <- respo_df_NP %>% 
+   filter(site=="Varari") 
+
+min(respo_df_NP_V$N_P) # 4.17757
+max(respo_df_NP_V$N_P) # 142 
+mean(respo_df_NP_V$N_P) ## 32.50551
+
+
+respo_df_NP_C <- respo_df_NP %>% 
+   filter(site=="Cabral") 
+
+min(respo_df_NP_C$N_P) # 0.3333
+max(respo_df_NP_C$N_P) # 65 
+mean(respo_df_NP_C$N_P) ## 13.01026
+
+
+# ambient NN 
+ambient_NP = 0.58/0.20
+ambient_NP
+
+# Cabral source NP 
+8.22/3.61
+
+# Varari source NP 
+42.49/2.50
+
+```
+
+
+
 
 ### double checking model significance and checking for outliers that skew the data 
 ```{r}
@@ -1181,230 +1741,6 @@ silvssal
 ## resume plotting with focus now on silicate and pH as best parameters
 ###########################
 ```
-
-
-### Calcification plot 
-```{r}
-###########################
-### PLOTTING SILICATE and CALCIFICATION 
-
-C_only <- respo_df_edited %>%
-  dplyr::mutate(log_silicate = log(silicate_umolL+1), 
-                log_silicate2 = (log_silicate^2), 
-                log_nitrate = log(NN_umolL+1), 
-                log_nitrate2 = (log_nitrate^2), 
-                log_phosphate = log(phosphate_umolL+1), 
-                log_phosphate2 = (log_phosphate^2),
-                date=factor(date)) %>% 
-  filter(!is.infinite(umol.cm2.hr), 
-         sample_ID != "Varari_Col4_Dil9_Light") %>% ## this individual sample was an outlier so remove from analyses 
-  filter(P_R=="C") 
-
-### now pull in model that was used to determine NN as best parameter for GP rates
-silicate_linear_NOsite_C <- lmer(umol.cm2.hr ~ log_silicate + (1|date/new_colonynumber), data=standardized_df %>%
-                      filter(P_R=="C") %>%
-                      filter(!is.infinite(umol.cm2.hr)))
-
-
-C_newdata <- tibble(umol.cm2.hr = rep(seq(0,1.5,0.01), each = 1, length.out = 714),
-                    log_silicate = rep(seq(0.5,3.5,0.06), 14),
-                    silicate = exp(log_silicate),
-                    new_colonynumber = c(rep(1,51),rep(2,51),rep(3,51),rep(4,51),
-                              rep(5,51),rep(6,51),rep(7,51),rep(8,51),
-                              rep(13,51),rep(14,51),rep(15,51),rep(16,51),
-                              rep(17,51),rep(18,51)),
-                    date = c(rep("6/17/23",51),rep("6/17/23",51),rep("6/17/23",51),rep("6/18/23",51),
-                             rep("6/21/23",51),rep("6/21/23",51),rep("6/22/23",51),rep("6/22/23",51),
-                             rep("6/10/23",51),rep("6/10/23",51),rep("6/11/23",51),rep("6/11/23",51),
-                             rep("6/12/23",51),rep("6/12/23",51)),
-                    site = ifelse(new_colonynumber %in% 1:8, "Varari", "Cabral"))
-
-plot_df_C <- tibble(silicate = C_newdata$silicate,
-                    log_silicate = C_newdata$log_silicate,
-                    pred_umol = predict(silicate_linear_NOsite_C, newdata = C_newdata),
-                    new_colonynumber = as.factor(C_newdata$new_colonynumber))
-
-Cplot <- ggplot() + # first plot the original data in the background and make it a bit transparent
-  geom_point(data = C_only, 
-             alpha = 0.5, 
-             aes(x= silicate_umolL,
-                 y= umol.cm2.hr,
-                 color = factor(new_colonynumber),
-                 fill = site), # I added fill = site so that I can remove the colony number legend and just have one for site for ease of interpretation
-             shape = 21 # this shape makes the color the border and fill the middle
-             ) + # bring in the raw data first.  Because I wanted to show this on the raw scale I used raw silicate and then transformed it
-  geom_line(data = plot_df_C, 
-            aes(x = silicate, # Make prediction lines this needs to be spelled the same as the plot datframe with new data.. not your original one.
-                y = pred_umol,
-                color = new_colonynumber), 
-            linetype = 1, size = 0.7, show.legend = "FALSE") +
-  coord_trans(x ="log") + # transform the axes
-  scale_color_manual(values = color_values) + # add in the color values
-  scale_fill_manual(values = c("goldenrod","firebrick")) + # add in fill values for site
-  scale_x_continuous(breaks = c(2,10,20,30))+
-  scale_y_continuous(breaks = c(-0.5,-0.25, 0, 0.25,0.5)) +
- # facet_wrap(~new_colonynumber) +
-  guides(color = "none") + # delete the guide for color
-  labs(linetype = NULL,
-       color = " ",
-       fill = " ",
-       x = expression(Silicate~(mu*mol~L^-1)),
-       y = expression(Calcification~(mu*mol~cm^-1~hr^-1))) +
-  theme_bw()+
-  theme(legend.position = "top",
-        legend.text = element_text(size = 16),
-        axis.text = element_text(size = 14),
-        axis.title = element_text(size = 16),
-        plot.title = element_text(face = 2, hjust = 0.5),
-        panel.border = element_rect(fill = NA, linewidth = 0.2))
-
-Cplot
-ggsave(here::here("Outputs", "JEBResubmission", "C_silicate.jpg"), 
-       width=12, height=13)
-
-###############################
-## PLOTTING pH AND CALCIFICATION 
-
-# need to edit dataset slightly 
-standardized_df <- standardized_df %>% 
-  mutate(log_nitrate=NN_umolL, 
-         log_silicate = silicate_umolL, 
-         log_pH = new_pH)
-
-pH_linear_NOsite_C <- lmer(umol.cm2.hr ~ log_pH + (1|date/new_colonynumber), data=standardized_df %>%
-                      filter(P_R=="C") %>%
-                      filter(!is.infinite(umol.cm2.hr)))
-
-
-# Reorder new_colonynumber and convert to factor with the correct levels
-C_newdata <- tibble(umol.cm2.hr = rep(seq(0,1.5,0.01), each = 1, length.out = 714),
-                    log_pH = rep(seq(-3.5,3.5,0.14), 14),
-                    pH = rep(seq(7.9,8.1,0.004),14),
-                    new_colonynumber = c(rep(1,51),rep(2,51),rep(3,51),rep(4,51),
-                              rep(5,51),rep(6,51),rep(7,51),rep(8,51),
-                              rep(13,51),rep(14,51),rep(15,51),rep(16,51),
-                              rep(17,51),rep(18,51)),
-                    date = c(rep("6/17/23",51),rep("6/17/23",51),rep("6/17/23",51),rep("6/18/23",51),
-                             rep("6/21/23",51),rep("6/21/23",51),rep("6/22/23",51),rep("6/22/23",51),
-                             rep("6/10/23",51),rep("6/10/23",51),rep("6/11/23",51),rep("6/11/23",51),
-                             rep("6/12/23",51),rep("6/12/23",51)),
-                    site = ifelse(new_colonynumber %in% 1:8, "Varari", "Cabral"))
-
-# Ensure new_colonynumber is a factor in the plot dataframe as well
-plot_df_C <- tibble(pH = C_newdata$pH,
-                    log_pH = C_newdata$log_pH,
-                    pred_umol = predict(pH_linear_NOsite_C, newdata = C_newdata),
-                    new_colonynumber = as.factor(C_newdata$new_colonynumber))
-
-Cplot2 <- ggplot() + # first plot the original data in the background and make it a bit transparent
-  geom_point(data = C_only, 
-             alpha = 0.5, 
-             aes(x= new_pH,
-                 y= umol.cm2.hr,
-                 color = factor(new_colonynumber),
-                 fill = site), # I added fill = site so that I can remove the colony number legend and just have one for site for ease of interpretation
-             shape = 21 # this shape makes the color the border and fill the middle
-             ) + # bring in the raw data first.  Because I wanted to show this on the raw scale I used raw silicate and then transformed it
-  geom_line(data = plot_df_C, 
-            aes(x = pH, # Make prediction lines this needs to be spelled the same as the plot datframe with new data.. not your original one.
-                y = pred_umol,
-                color = new_colonynumber), 
-            linetype = 1, size = 0.7, show.legend = "FALSE") +
-  coord_trans(x ="log") + # transform the axes
-  scale_color_manual(values = color_values) + # add in the color values
-  scale_fill_manual(values = c("goldenrod","firebrick")) + # add in fill values for site
-  scale_x_continuous(breaks = c(7.7,7.8,7.9,8.0,8.1))+
-  scale_y_continuous(breaks = c(-0.5,-0.25, 0, 0.25,0.5)) +
- # facet_wrap(~new_colonynumber) +
-  guides(color = "none") + # delete the guide for color
-  labs(linetype = NULL,
-       color = " ",
-       fill = " ",
-       x = expression(pH),
-       y = expression(Calcification~(mu*mol~cm^-1~hr^-1))) +
-  theme_bw()+
-  theme(legend.position = "top",
-        legend.text = element_text(size = 16),
-        axis.text = element_text(size = 14),
-        axis.title = element_text(size = 16),
-        plot.title = element_text(face = 2, hjust = 0.5),
-        panel.border = element_rect(fill = NA, linewidth = 0.2))
-
-Cplot2
-ggsave(here::here("Outputs", "JEBResubmission", "C_pH.jpg"), 
-       width=12, height=13)
-
-
-```
-
-
-### Patch all the plots together 
-```{r}
-Rplot_NN + GPplot + Cplot + Cplot2
-```
-
-
-
-### Bonus: Look at potential for N:P plots 
-
-```{r}
-## Plot NN over Phosphate with raw data -- rethinking N:P ratio
-
-NN_Phos <- respo_df_edited %>% 
-  filter(P_R=="C", 
-         sample_ID != "Varari_Col4_Dil9_Light") %>% 
-  ggplot(aes(x=NN_umolL/phosphate_umolL, 
-             y=umol.cm2.hr)) + 
-  geom_point(aes(color=new_colonynumber)) + 
-  coord_trans(x="log") + 
-  facet_wrap(~new_colonynumber, scales="free")
-
-## model 
-## if want to get AIC will need to add to standardized df 
-respo_df_edited <- respo_df_edited %>% 
-  mutate(N_P = NN_umolL/phosphate_umolL)
-
-NtoP <- lmer(umol.cm2.hr ~ N_P + (1|date/new_colonynumber), data=respo_df_edited %>%
-                      filter(P_R=="R") %>%
-                      filter(sample_ID != "Varari_Col4_Dil9_Light") %>% 
-                      filter(!is.infinite(umol.cm2.hr)))
-anova(NtoP)
-summary(NtoP)
-
-
-
-### nitrate plots 
-NNplot <- standardized_df %>% 
-  filter(P_R=="GP") %>% 
-  ggplot(aes(x=NN_umolL, 
-             y=umol.cm2.hr)) + 
-  geom_point(aes(color=new_colonynumber)) 
-
-NNplot
-
-
-NN_linear_NOsite_GP <- lmer(umol.cm2.hr ~ NN_umolL + (1|date/new_colonynumber), data=standardized_df %>%
-                      filter(P_R=="R") %>%
-                      filter(!is.infinite(umol.cm2.hr)))
-
-summary(NN_linear_NOsite_GP)
-```
-
-
-
-
-# SECTION 3: Make a kable table to display AIC, pvalues, effect size, and st error for each model 
-```{r}
-
-
-
-
-
-
-
-
-```
-
 
 
 
