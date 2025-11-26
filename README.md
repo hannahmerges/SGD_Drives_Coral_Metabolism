@@ -16,6 +16,6 @@ Freshwater inputs to coastal marine ecosystems can introduce biogeochemical cond
 
 All data, scripts, and outputs directly related to the JEB Submission can be found in "JEB_Submission" folder. 
 
-Processed and raw data can be found in "Initial_Submission", "Data" folder.
-Scripts for data processing, analysis, and figures can be found in "Initial_Submission", "Scripts" folders.
-Output figures and tables can be found in "Initial_Submission","Outputs" folders.
+Processed and raw data used in initial analyses and data tidying can be found in the "Data" folder.
+Scripts for data processing, analysis, and initial figures can be found in the "Scripts" folders.
+Output figures and tables can for previous presentations and submissions be found in the "Outputs" folders.
